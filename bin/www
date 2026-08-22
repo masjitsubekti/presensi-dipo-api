@@ -1,0 +1,32 @@
+#!/usr/bin/env node
+require('dotenv').config();
+
+const app = require('../app');
+
+const PORT = process.env.PORT || 3000;
+
+const server = app.listen(PORT, () => {
+  console.log(`\n🚀 ${process.env.APP_NAME || 'School Management API'} running!`);
+  console.log(`   ➜ Local:   http://localhost:${PORT}`);
+  console.log(`   ➜ Health:  http://localhost:${PORT}/v1/health`);
+  console.log(`   ➜ Env:     ${process.env.NODE_ENV || 'development'}`);
+  console.log(`   ➜ DB:      ${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_DATABASE}\n`);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('\n🛑 SIGTERM received. Shutting down gracefully...');
+  server.close(() => {
+    const { PrismaClient } = require('@prisma/client');
+    // Prisma disconnect on shutdown
+    console.log('✅ Server closed.');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('\n🛑 SIGINT received. Shutting down...');
+  process.exit(0);
+});
+
+module.exports = server;

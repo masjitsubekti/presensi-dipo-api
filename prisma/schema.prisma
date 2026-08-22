@@ -1,0 +1,297 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model AuthRole {
+  id          String      @id @db.VarChar(36)
+  name        String      @unique(map: "auth_role_name_unique") @db.VarChar(100)
+  description String?     @db.Text
+  createdAt   DateTime?   @map("created_at") @db.Timestamp(0)
+  updatedAt   DateTime?   @updatedAt @map("updated_at") @db.Timestamp(0)
+  users       AuthUser[]
+  menuRoles   CMenuRole[]
+
+  @@map("auth_role")
+}
+
+model AuthUser {
+  id               String    @id @default(uuid()) @db.Char(36)
+  name             String    @db.VarChar(255)
+  username         String    @unique(map: "auth_user_username_unique") @db.VarChar(100)
+  email            String?   @unique(map: "auth_user_email_unique") @db.VarChar(100)
+  password         String    @db.VarChar(255)
+  roleId           String    @map("role_id") @db.VarChar(36)
+  personId         BigInt?   @map("person_id") @db.UnsignedBigInt
+  organizationId   BigInt?   @map("organization_id") @db.UnsignedBigInt
+  institutionId    BigInt?   @map("institution_id") @db.UnsignedBigInt
+  status           String?   @db.VarChar(10)
+  foto             String?   @db.Text
+  active           Boolean   @default(true)
+  mobileFcmToken   String?   @map("mobile_fcm_token") @db.Text
+  webFcmToken      String?   @map("web_fcm_token") @db.Text
+  resetToken       String?   @map("reset_token") @db.VarChar(255)
+  resetTokenExpiry DateTime? @map("reset_token_expiry") @db.Timestamp(0)
+  createdBy        String?   @map("created_by") @db.Char(36)
+  updatedBy        String?   @map("updated_by") @db.Char(36)
+  createdAt        DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt        DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
+  deletedAt        DateTime? @map("deleted_at") @db.Timestamp(0)
+  isDeleted        Boolean   @default(false) @map("is_deleted")
+  role             AuthRole  @relation(fields: [roleId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "auth_user_role_id_foreign")
+
+  @@index([roleId], map: "auth_user_role_id_foreign")
+  @@map("auth_user")
+}
+
+model CMenu {
+  id              Int         @id @default(autoincrement()) @db.UnsignedInt
+  name            String      @unique(map: "c_menu_name_unique") @db.VarChar(100)
+  link            String?     @db.VarChar(100)
+  icon            String?     @db.VarChar(50)
+  description     String?     @db.Text
+  permissionLabel String?     @map("permission_label") @db.VarChar(50)
+  action          String?     @db.VarChar(50)
+  level           Int         @default(1)
+  seq             Int         @default(1)
+  parentId        Int?        @map("parent_id") @db.UnsignedInt
+  createdBy       String?     @map("created_by") @db.Char(36)
+  updatedBy       String?     @map("updated_by") @db.Char(36)
+  createdAt       DateTime?   @map("created_at") @db.Timestamp(0)
+  updatedAt       DateTime?   @updatedAt @map("updated_at") @db.Timestamp(0)
+  isDeleted       Boolean     @default(false) @map("is_deleted")
+  parent          CMenu?      @relation("MenuChildren", fields: [parentId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "c_menu_parent_id_foreign")
+  children        CMenu[]     @relation("MenuChildren")
+  roles           CMenuRole[]
+
+  @@index([parentId], map: "c_menu_parent_id_foreign")
+  @@map("c_menu")
+}
+
+model CMenuRole {
+  id         Int      @id @default(autoincrement()) @db.UnsignedInt
+  menuId     Int      @map("menu_id") @db.UnsignedInt
+  roleId     String   @map("role_id") @db.VarChar(36)
+  permission String?  @db.VarChar(50)
+  mainPage   Boolean  @default(false) @map("main_page")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamp(0)
+  menu       CMenu    @relation(fields: [menuId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "c_menu_role_menu_id_foreign")
+  role       AuthRole @relation(fields: [roleId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "c_menu_role_role_id_foreign")
+
+  @@index([menuId], map: "c_menu_role_menu_id_foreign")
+  @@index([roleId], map: "c_menu_role_role_id_foreign")
+  @@map("c_menu_role")
+}
+
+model AppConfig {
+  id            BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  app_name      String    @db.VarChar(255)
+  app_logo      String?   @db.VarChar(255)
+  company_name  String    @db.VarChar(255)
+  company_email String?   @db.VarChar(255)
+  company_logo  String?   @db.VarChar(255)
+  address       String?   @db.Text
+  smtp_host     String?   @db.VarChar(255)
+  smtp_port     Int?
+  smtp_email    String?   @db.VarChar(255)
+  smtp_password String?   @db.VarChar(255)
+  updated_by    String?   @db.Char(36)
+  createdAt     DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt     DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
+
+  @@map("app_config")
+}
+
+model MLevel {
+  id           Int            @id @default(autoincrement()) @db.UnsignedInt
+  code         String         @unique(map: "m_level_code_unique") @db.VarChar(50)
+  name         String         @db.VarChar(100)
+  seq          Int            @default(1)
+  is_active    Boolean        @default(true)
+  createdAt    DateTime?      @map("created_at") @db.Timestamp(0)
+  updatedAt    DateTime?      @updatedAt @map("updated_at") @db.Timestamp(0)
+  institutions MInstitution[]
+
+  @@map("m_level")
+}
+
+model MInstitution {
+  id          Int           @id @default(autoincrement()) @db.UnsignedInt
+  code        String        @db.VarChar(50)
+  name        String        @db.VarChar(255)
+  levelId     Int?          @map("level_id") @db.UnsignedInt
+  npsn        String?       @db.VarChar(50)
+  address     String?       @db.Text
+  phone       String?       @db.VarChar(50)
+  email       String?       @db.VarChar(255)
+  isActive    Boolean       @default(true) @map("is_active")
+  createdBy   String?       @map("created_by") @db.Char(36)
+  updatedBy   String?       @map("updated_by") @db.Char(36)
+  deletedAt   DateTime?     @map("deleted_at") @db.Timestamp(0)
+  createdAt   DateTime?     @map("created_at") @db.Timestamp(0)
+  updatedAt   DateTime?     @updatedAt @map("updated_at") @db.Timestamp(0)
+  isDeleted   Boolean       @default(false) @map("is_deleted")
+  level       MLevel?       @relation(fields: [levelId], references: [id])
+  departments MDepartment[]
+  persons     MPerson[]
+  positions   MPosition[]
+  workShifts  WorkShift[]
+
+  @@map("m_institution")
+}
+
+model MPosition {
+  id            Int           @id @default(autoincrement()) @db.UnsignedInt
+  code          String        @unique(map: "m_position_code_unique") @db.VarChar(50)
+  name          String        @db.VarChar(255)
+  institutionId Int?          @map("institution_id") @db.UnsignedInt
+  createdBy     String?       @map("created_by") @db.Char(36)
+  updatedBy     String?       @map("updated_by") @db.Char(36)
+  deletedAt     DateTime?     @map("deleted_at") @db.Timestamp(0)
+  createdAt     DateTime?     @map("created_at") @db.Timestamp(0)
+  updatedAt     DateTime?     @updatedAt @map("updated_at") @db.Timestamp(0)
+  isDeleted     Boolean       @default(false) @map("is_deleted")
+  persons       MPerson[]
+  institution   MInstitution? @relation(fields: [institutionId], references: [id], onUpdate: NoAction, map: "m_position_institution_id_foreign")
+
+  @@index([institutionId], map: "m_position_institution_id_foreign")
+  @@map("m_position")
+}
+
+model MDepartment {
+  id            Int           @id @default(autoincrement()) @db.UnsignedInt
+  code          String        @unique(map: "m_department_code_unique") @db.VarChar(50)
+  name          String        @db.VarChar(255)
+  institutionId Int?          @map("institution_id") @db.UnsignedInt
+  createdBy     String?       @map("created_by") @db.Char(36)
+  updatedBy     String?       @map("updated_by") @db.Char(36)
+  deletedAt     DateTime?     @map("deleted_at") @db.Timestamp(0)
+  createdAt     DateTime?     @map("created_at") @db.Timestamp(0)
+  updatedAt     DateTime?     @updatedAt @map("updated_at") @db.Timestamp(0)
+  isDeleted     Boolean       @default(false) @map("is_deleted")
+  institution   MInstitution? @relation(fields: [institutionId], references: [id], onUpdate: NoAction, map: "m_department_institution_id_foreign")
+  persons       MPerson[]
+
+  @@index([institutionId], map: "m_department_institution_id_foreign")
+  @@map("m_department")
+}
+
+model MPerson {
+  id            Int           @id @default(autoincrement()) @db.UnsignedInt
+  nip           String?       @unique(map: "m_person_nip_unique") @db.VarChar(50)
+  name          String        @db.VarChar(255)
+  gender        String?       @db.VarChar(20)
+  birthDate     DateTime?     @map("birth_date") @db.Date
+  tmt           DateTime?     @db.Date
+  phone         String?       @db.VarChar(50)
+  email         String?       @db.VarChar(255)
+  address       String?       @db.Text
+  institutionId Int?          @map("institution_id") @db.UnsignedInt
+  positionId    Int?          @map("position_id") @db.UnsignedInt
+  departmentId  Int?          @map("department_id") @db.UnsignedInt
+  status        String?       @db.VarChar(50)
+  photo         String?       @db.VarChar(255)
+  createdBy     String?       @map("created_by") @db.Char(36)
+  updatedBy     String?       @map("updated_by") @db.Char(36)
+  deletedAt     DateTime?     @map("deleted_at") @db.Timestamp(0)
+  createdAt     DateTime?     @map("created_at") @db.Timestamp(0)
+  updatedAt     DateTime?     @updatedAt @map("updated_at") @db.Timestamp(0)
+  isDeleted     Boolean       @default(false) @map("is_deleted")
+  department    MDepartment?  @relation(fields: [departmentId], references: [id], onUpdate: NoAction, map: "m_person_department_id_foreign")
+  institution   MInstitution? @relation(fields: [institutionId], references: [id], onUpdate: NoAction, map: "m_person_institution_id_foreign")
+  position      MPosition?    @relation(fields: [positionId], references: [id], onUpdate: NoAction, map: "m_person_position_id_foreign")
+  shiftPatterns WorkShiftPattern[]
+
+  @@index([departmentId], map: "m_person_department_id_foreign")
+  @@index([institutionId], map: "m_person_institution_id_foreign")
+  @@index([positionId], map: "m_person_position_id_foreign")
+  @@map("m_person")
+}
+
+model MWorkTime {
+  id                  Int               @id @default(autoincrement()) @db.UnsignedInt
+  code                String            @unique(map: "m_work_time_code_unique") @db.VarChar(50)
+  name                String            @db.VarChar(100)
+  workStartTime       String            @map("work_start_time") @db.VarChar(10)
+  workEndTime         String            @map("work_end_time") @db.VarChar(10)
+  checkinStart        String            @map("checkin_start") @db.VarChar(10)
+  checkinEnd          String            @map("checkin_end") @db.VarChar(10)
+  checkoutStart       String?           @map("checkout_start") @db.VarChar(10)
+  checkoutEnd         String?           @map("checkout_end") @db.VarChar(10)
+  lateTolerance       Int               @default(0) @map("late_tolerance")
+  earlyLeaveTolerance Int               @default(0) @map("early_leave_tolerance")
+  isActive            Boolean           @default(true) @map("is_active")
+  createdBy           String?           @map("created_by") @db.VarChar(36)
+  updatedBy           String?           @map("updated_by") @db.VarChar(36)
+  deletedAt           DateTime?         @map("deleted_at") @db.Timestamp(0)
+  createdAt           DateTime?         @map("created_at") @db.Timestamp(0)
+  updatedAt           DateTime?         @updatedAt @map("updated_at") @db.Timestamp(0)
+  isDeleted           Boolean           @default(false) @map("is_deleted")
+  shiftDetails        WorkShiftDetail[]
+
+  @@map("m_work_time")
+}
+
+model WorkShift {
+  id            String             @id @default(uuid()) @db.VarChar(36)
+  code          String             @unique(map: "work_shift_code_unique") @db.VarChar(50)
+  name          String             @db.VarChar(255)
+  institutionId Int?               @map("institution_id") @db.UnsignedInt
+  isActive      Boolean            @default(true) @map("is_active")
+  createdBy     String?            @map("created_by") @db.VarChar(36)
+  updatedBy     String?            @map("updated_by") @db.VarChar(36)
+  deletedAt     DateTime?          @map("deleted_at") @db.Timestamp(0)
+  createdAt     DateTime?          @map("created_at") @db.Timestamp(0)
+  updatedAt     DateTime?          @updatedAt @map("updated_at") @db.Timestamp(0)
+  isDeleted     Boolean            @default(false) @map("is_deleted")
+  institution   MInstitution?      @relation(fields: [institutionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  details       WorkShiftDetail[]
+  patterns      WorkShiftPattern[]
+
+  @@index([institutionId], map: "work_shift_institution_id_foreign")
+  @@map("work_shift")
+}
+
+model WorkShiftDetail {
+  id           String     @id @default(uuid()) @db.VarChar(36)
+  shiftId      String     @map("shift_id") @db.VarChar(36)
+  dayOfWeek    Int        @map("day_of_week") @db.SmallInt
+  workTimeId   Int?       @map("work_time_id") @db.UnsignedInt
+  isWorkingDay Boolean    @default(true) @map("is_working_day")
+  createdBy    String?    @map("created_by") @db.VarChar(36)
+  updatedBy    String?    @map("updated_by") @db.VarChar(36)
+  deletedAt    DateTime?  @map("deleted_at") @db.Timestamp(0)
+  createdAt    DateTime?  @map("created_at") @db.Timestamp(0)
+  updatedAt    DateTime?  @updatedAt @map("updated_at") @db.Timestamp(0)
+  isDeleted    Boolean    @default(false) @map("is_deleted")
+  shift        WorkShift  @relation(fields: [shiftId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  workTime     MWorkTime? @relation(fields: [workTimeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([shiftId], map: "work_shift_detail_shift_id_foreign")
+  @@index([workTimeId], map: "work_shift_detail_work_time_id_foreign")
+  @@map("work_shift_detail")
+}
+
+model WorkShiftPattern {
+  id             String    @id @default(uuid()) @db.VarChar(36)
+  personId       Int       @map("person_id") @db.UnsignedInt
+  shiftId        String    @map("shift_id") @db.VarChar(36)
+  effectiveFrom  DateTime  @map("effective_from") @db.Date
+  effectiveUntil DateTime? @map("effective_until") @db.Date
+  createdBy      String?   @map("created_by") @db.VarChar(36)
+  updatedBy      String?   @map("updated_by") @db.VarChar(36)
+  deletedAt      DateTime? @map("deleted_at") @db.Timestamp(0)
+  createdAt      DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt      DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
+  isDeleted      Boolean   @default(false) @map("is_deleted")
+  person         MPerson   @relation(fields: [personId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  shift          WorkShift @relation(fields: [shiftId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([personId], map: "work_shift_pattern_person_id_foreign")
+  @@index([shiftId], map: "work_shift_pattern_shift_id_foreign")
+  @@map("work_shift_pattern")
+}
