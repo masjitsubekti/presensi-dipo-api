@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node bin/www",
     "dev": "nodemon bin/www",
+    "vercel-build": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:migrate": "prisma migrate dev",
