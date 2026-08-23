@@ -16,6 +16,9 @@ const personRoutes = require('./person.routes');
 const workTimeRoutes = require('./work-time.routes');
 const workShiftRoutes = require('./work-shift.routes');
 const workShiftPatternRoutes = require('./work-shift-pattern.routes');
+const attendanceRoutes = require('./attendance.routes');
+const locationRoutes = require('./location.routes');
+
 
 // ==================== Health ====================
 router.use('/health', healthRoutes);
@@ -43,4 +46,11 @@ router.use('/master/work-time', workTimeRoutes);
 router.use('/master/work-shift', workShiftRoutes);
 router.use('/master/work-shift-pattern', workShiftPatternRoutes);
 
+// ==================== Attendance ====================
+router.use('/attendance', attendanceRoutes);
+
+// ==================== Master: Location ====================
+router.use('/master/location', locationRoutes);
+
 module.exports = router;
+

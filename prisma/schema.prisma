@@ -98,10 +98,13 @@ model AppConfig {
   smtp_host     String?   @db.VarChar(255)
   smtp_port     Int?
   smtp_email    String?   @db.VarChar(255)
-  smtp_password String?   @db.VarChar(255)
-  updated_by    String?   @db.Char(36)
-  createdAt     DateTime? @map("created_at") @db.Timestamp(0)
-  updatedAt     DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
+  smtp_password          String?   @db.VarChar(255)
+  allowHolidayAttendance Boolean   @default(true) @map("allow_holiday_attendance")
+  saveAttendancePhoto    Boolean   @default(true) @map("save_attendance_photo")
+  requireAttendancePhoto Boolean   @default(true) @map("require_attendance_photo")
+  updated_by             String?   @db.Char(36)
+  createdAt              DateTime? @map("created_at") @db.Timestamp(0)
+  updatedAt              DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
 
   @@map("app_config")
 }
@@ -294,4 +297,100 @@ model WorkShiftPattern {
   @@index([personId], map: "work_shift_pattern_person_id_foreign")
   @@index([shiftId], map: "work_shift_pattern_shift_id_foreign")
   @@map("work_shift_pattern")
+}
+
+// ==================== ATTENDANCE ====================
+
+model MLocation {
+  id            Int           @id @default(autoincrement()) @db.UnsignedInt
+  institutionId Int           @map("institution_id") @db.UnsignedInt
+  code          String        @db.VarChar(50)
+  name          String        @db.VarChar(255)
+  latitude      Decimal       @db.Decimal(10, 7)
+  longitude     Decimal       @db.Decimal(10, 7)
+  radiusMeter   Int           @default(100) @map("radius_meter")
+  isActive      Boolean       @default(true) @map("is_active")
+  createdAt     DateTime?     @map("created_at") @db.DateTime(0)
+  createdBy     String?       @map("created_by") @db.VarChar(36)
+  updatedAt     DateTime?     @updatedAt @map("updated_at") @db.DateTime(0)
+  updatedBy     String?       @map("updated_by") @db.VarChar(36)
+  deletedAt     DateTime?     @map("deleted_at") @db.DateTime(0)
+  isDeleted     Boolean       @default(false) @map("is_deleted")
+  attendanceLogs AttendanceLog[]
+
+  @@index([institutionId, isActive], map: "m_location_institution_active")
+  @@map("m_location")
+}
+
+model Attendance {
+  id                    BigInt    @id @default(autoincrement()) @db.UnsignedBigInt
+  institutionId         Int       @map("institution_id") @db.UnsignedInt
+  personId              Int       @map("person_id") @db.UnsignedInt
+  attendanceType        String    @map("attendance_type") @db.VarChar(20)
+  attendanceDate        DateTime  @map("attendance_date") @db.Date
+  scheduleId            Int?      @map("schedule_id") @db.UnsignedInt
+  checkinTime           DateTime? @map("checkin_time") @db.Timestamp(0)
+  checkoutTime          DateTime? @map("checkout_time") @db.Timestamp(0)
+  checkinPhoto          String?   @map("checkin_photo") @db.VarChar(500)
+  checkoutPhoto         String?   @map("checkout_photo") @db.VarChar(500)
+  checkinLocationId     Int?      @map("checkin_location_id") @db.UnsignedInt
+  checkoutLocationId    Int?      @map("checkout_location_id") @db.UnsignedInt
+  checkinLatitude       Decimal?  @map("checkin_latitude") @db.Decimal(10, 7)
+  checkinLongitude      Decimal?  @map("checkin_longitude") @db.Decimal(10, 7)
+  checkinDistanceMeter  Decimal?  @map("checkin_distance_meter") @db.Decimal(10, 2)
+  checkoutLatitude      Decimal?  @map("checkout_latitude") @db.Decimal(10, 7)
+  checkoutLongitude     Decimal?  @map("checkout_longitude") @db.Decimal(10, 7)
+  checkoutDistanceMeter Decimal?  @map("checkout_distance_meter") @db.Decimal(10, 2)
+  status                String?   @db.VarChar(30)
+  teachingStatus        String?   @map("teaching_status") @db.VarChar(30)
+  lateMinutes           Int?      @map("late_minutes")
+  earlyLeaveMinutes     Int?      @map("early_leave_minutes")
+  overtimeMinutes       Int?      @map("overtime_minutes")
+  note                  String?   @db.Text
+  createdAt             DateTime? @map("created_at") @db.Timestamp(0)
+  createdBy             String?   @map("created_by") @db.VarChar(36)
+  updatedAt             DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)
+  updatedBy             String?   @map("updated_by") @db.VarChar(36)
+  deletedAt             DateTime? @map("deleted_at") @db.Timestamp(0)
+  isDeleted             Boolean   @default(false) @map("is_deleted")
+  logs                  AttendanceLog[]
+
+  @@index([institutionId, personId, attendanceDate], map: "attendance_institution_person_date")
+  @@index([institutionId, attendanceDate], map: "attendance_institution_date")
+  @@index([personId, attendanceDate], map: "attendance_person_date")
+  @@map("attendances")
+}
+
+model AttendanceLog {
+  id                   BigInt     @id @default(autoincrement()) @db.UnsignedBigInt
+  institutionId        Int        @map("institution_id") @db.UnsignedInt
+  personId             Int        @map("person_id") @db.UnsignedInt
+  dateTime             DateTime?  @map("date_time") @db.Timestamp(0)
+  attendanceId         BigInt?    @map("attendance_id") @db.UnsignedBigInt
+  attendanceType       String     @map("attendance_type") @db.VarChar(20)
+  action               String     @db.VarChar(20)
+  scheduleId           Int?       @map("schedule_id") @db.UnsignedInt
+  attendanceLocationId Int?       @map("attendance_location_id") @db.UnsignedInt
+  photo                String?    @db.VarChar(500)
+  latitude             Decimal?   @db.Decimal(10, 7)
+  longitude            Decimal?   @db.Decimal(10, 7)
+  distanceMeter        Decimal?   @map("distance_meter") @db.Decimal(10, 2)
+  locationStatus       String?    @map("location_status") @db.VarChar(30)
+  device               String?    @db.VarChar(255)
+  ipAddress            String?    @map("ip_address") @db.VarChar(50)
+  status               String?    @db.VarChar(20)
+  rejectionReason      String?    @map("rejection_reason") @db.VarChar(255)
+  createdAt            DateTime?  @map("created_at") @db.Timestamp(0)
+  createdBy            String?    @map("created_by") @db.VarChar(36)
+  updatedAt            DateTime?  @updatedAt @map("updated_at") @db.Timestamp(0)
+  updatedBy            String?    @map("updated_by") @db.VarChar(36)
+  deletedAt            DateTime?  @map("deleted_at") @db.Timestamp(0)
+  isDeleted            Boolean    @default(false) @map("is_deleted")
+  attendance           Attendance?  @relation(fields: [attendanceId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  location             MLocation?   @relation(fields: [attendanceLocationId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "attendance_logs_location_id_fkey")
+
+  @@index([institutionId, personId, dateTime], map: "attendance_log_institution_person_datetime")
+  @@index([attendanceId, dateTime], map: "attendance_log_attendance_datetime")
+  @@index([institutionId, attendanceType, dateTime], map: "attendance_log_institution_type_datetime")
+  @@map("attendance_logs")
 }

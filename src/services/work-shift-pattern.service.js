@@ -117,6 +117,12 @@ const resolveById = async (id) => {
   return result[0];
 };
 
+const parseDate = (val) => {
+  if (!val) return null;
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? null : d;
+};
+
 const create = async (data, user = null) => {
   const now = new Date();
   const userId = user?.id ?? null;
@@ -131,8 +137,8 @@ const create = async (data, user = null) => {
 
   // Bulk creation if multiple persons or multiple shifts are provided
   if (personIdsList.length > 0 && shiftIdsList.length > 0 && (personIdsList.length > 1 || shiftIdsList.length > 1)) {
-    const effectiveFrom = new Date(data.effectiveFrom ?? data.effective_from);
-    const effectiveUntil = data.effectiveUntil ?? data.effective_until ? new Date(data.effectiveUntil ?? data.effective_until) : null;
+    const effectiveFromVal = data.effectiveFrom ?? data.effective_from;
+    const effectiveUntilVal = data.effectiveUntil ?? data.effective_until;
 
     const createManyData = [];
     for (const pId of personIdsList) {
@@ -141,8 +147,8 @@ const create = async (data, user = null) => {
           id: uuidv4(),
           personId: Number(pId),
           shiftId: String(sId),
-          effectiveFrom: effectiveFrom,
-          effectiveUntil: effectiveUntil,
+          effectiveFrom: parseDate(effectiveFromVal) || now,
+          effectiveUntil: parseDate(effectiveUntilVal),
           createdAt: now,
           createdBy: userId,
         });
@@ -160,14 +166,16 @@ const create = async (data, user = null) => {
   const id = uuidv4();
   const singlePersonId = personIdsList[0] ?? data.personId ?? data.person_id;
   const singleShiftId = shiftIdsList[0] ?? data.shiftId ?? data.shift_id;
+  const effectiveFromVal = data.effectiveFrom ?? data.effective_from;
+  const effectiveUntilVal = data.effectiveUntil ?? data.effective_until;
 
   await prisma.workShiftPattern.create({
     data: {
       id: id,
       personId: Number(singlePersonId),
       shiftId: String(singleShiftId),
-      effectiveFrom: new Date(data.effectiveFrom ?? data.effective_from),
-      effectiveUntil: data.effectiveUntil ?? data.effective_until ? new Date(data.effectiveUntil ?? data.effective_until) : null,
+      effectiveFrom: parseDate(effectiveFromVal) || now,
+      effectiveUntil: parseDate(effectiveUntilVal),
       createdAt: now,
       createdBy: userId,
     },
@@ -179,14 +187,16 @@ const create = async (data, user = null) => {
 const update = async (id, data, user = null) => {
   await resolveById(id);
   const now = new Date();
+  const effectiveFromVal = data.effectiveFrom ?? data.effective_from;
+  const effectiveUntilVal = data.effectiveUntil ?? data.effective_until;
 
   await prisma.workShiftPattern.update({
     where: { id: String(id) },
     data: {
       personId: Number(data.personId ?? data.person_id),
       shiftId: String(data.shiftId ?? data.shift_id),
-      effectiveFrom: new Date(data.effectiveFrom ?? data.effective_from),
-      effectiveUntil: data.effectiveUntil ?? data.effective_until ? new Date(data.effectiveUntil ?? data.effective_until) : null,
+      effectiveFrom: parseDate(effectiveFromVal) || now,
+      effectiveUntil: parseDate(effectiveUntilVal),
       updatedAt: now,
       updatedBy: user?.id ?? null,
     },
