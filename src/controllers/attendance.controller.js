@@ -69,7 +69,7 @@ const getHistory = async (req, res, next) => {
  */
 const getLogs = async (req, res, next) => {
   try {
-    const data = await attendanceService.getLogs(req.user.id, req.query);
+    const data = await attendanceService.resolveAll(req.query, req.user?.id);
     return response.success(res, data, 'Berhasil memuat log presensi');
   } catch (err) {
     if (err.status) return response.error(res, err.message, err.status);

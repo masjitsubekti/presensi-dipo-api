@@ -4,8 +4,9 @@
  */
 
 const ATTENDANCE_TYPE = {
-  OFFICE: 'office',
+  REGULAR: 'regular',
   TEACHING: 'teaching',
+  OFFICE: 'regular',
 };
 
 const ATTENDANCE_STATUS = {

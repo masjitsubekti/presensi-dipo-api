@@ -1,5 +1,6 @@
 require('dotenv').config();
 const prisma = require('../config/prisma');
+const { paginate, parsePaginationParams } = require('../helpers/pagination.helper');
 const { v4: uuidv4 } = require('uuid');
 const { checkWithinRadius } = require('../utils/haversine');
 const {
@@ -84,7 +85,7 @@ const getTodayAttendance = async (userId) => {
       personId,
       institutionId,
       attendanceDate: new Date(today),
-      attendanceType: ATTENDANCE_TYPE.OFFICE,
+      attendanceType: ATTENDANCE_TYPE.REGULAR,
       isDeleted: false,
     },
   });
@@ -301,7 +302,7 @@ const checkIn = async (userId, { photoBuffer, photoMimeType, latitude, longitude
       personId,
       institutionId,
       attendanceDate: new Date(today),
-      attendanceType: ATTENDANCE_TYPE.OFFICE,
+      attendanceType: ATTENDANCE_TYPE.REGULAR,
       isDeleted: false,
     },
   });
@@ -310,7 +311,7 @@ const checkIn = async (userId, { photoBuffer, photoMimeType, latitude, longitude
     // Location validation first for re-checkin
     if (!isWithin) {
       await insertLog({
-        institutionId, personId, action: LOG_ACTION.CHECKIN, attendanceType: ATTENDANCE_TYPE.OFFICE,
+        institutionId, personId, action: LOG_ACTION.CHECKIN, attendanceType: ATTENDANCE_TYPE.REGULAR,
         latitude, longitude, distanceMeter: distance, locationStatus,
         status: LOG_STATUS.REJECTED, rejectionReason: ERROR_CODE.OUT_OF_RADIUS,
         attendanceId: existing.id, attendanceLocationId, device, ipAddress, now,
@@ -329,7 +330,7 @@ const checkIn = async (userId, { photoBuffer, photoMimeType, latitude, longitude
       : null;
 
     await insertLog({
-      institutionId, personId, action: LOG_ACTION.CHECKIN, attendanceType: ATTENDANCE_TYPE.OFFICE,
+      institutionId, personId, action: LOG_ACTION.CHECKIN, attendanceType: ATTENDANCE_TYPE.REGULAR,
       latitude, longitude, distanceMeter: distance, locationStatus,
       status: LOG_STATUS.SUCCESS, attendanceId: existing.id,
       attendanceLocationId: location.id, photo: photoPath, device, ipAddress, now,
@@ -346,7 +347,7 @@ const checkIn = async (userId, { photoBuffer, photoMimeType, latitude, longitude
   // 4. Location validation
   if (!isWithin) {
     await insertLog({
-      institutionId, personId, action: LOG_ACTION.CHECKIN, attendanceType: ATTENDANCE_TYPE.OFFICE,
+      institutionId, personId, action: LOG_ACTION.CHECKIN, attendanceType: ATTENDANCE_TYPE.REGULAR,
       latitude, longitude, distanceMeter: distance, locationStatus,
       status: LOG_STATUS.REJECTED, rejectionReason: ERROR_CODE.OUT_OF_RADIUS,
       attendanceLocationId, device, ipAddress, now,
@@ -376,7 +377,7 @@ const checkIn = async (userId, { photoBuffer, photoMimeType, latitude, longitude
 
     if (wt.checkinStart && nowMinutes < timeToMinutes(wt.checkinStart)) {
       await insertLog({
-        institutionId, personId, action: LOG_ACTION.CHECKIN, attendanceType: ATTENDANCE_TYPE.OFFICE,
+        institutionId, personId, action: LOG_ACTION.CHECKIN, attendanceType: ATTENDANCE_TYPE.REGULAR,
         latitude, longitude, distanceMeter: distance, locationStatus,
         status: LOG_STATUS.REJECTED, rejectionReason: ERROR_CODE.CHECKIN_NOT_ALLOWED,
         attendanceLocationId, device, ipAddress, now,
@@ -386,7 +387,7 @@ const checkIn = async (userId, { photoBuffer, photoMimeType, latitude, longitude
 
     if (wt.checkinEnd && nowMinutes > timeToMinutes(wt.checkinEnd)) {
       await insertLog({
-        institutionId, personId, action: LOG_ACTION.CHECKIN, attendanceType: ATTENDANCE_TYPE.OFFICE,
+        institutionId, personId, action: LOG_ACTION.CHECKIN, attendanceType: ATTENDANCE_TYPE.REGULAR,
         latitude, longitude, distanceMeter: distance, locationStatus,
         status: LOG_STATUS.REJECTED, rejectionReason: ERROR_CODE.CHECKIN_NOT_ALLOWED,
         attendanceLocationId, device, ipAddress, now,
@@ -415,7 +416,7 @@ const checkIn = async (userId, { photoBuffer, photoMimeType, latitude, longitude
       data: {
         institutionId,
         personId,
-        attendanceType: ATTENDANCE_TYPE.OFFICE,
+        attendanceType: ATTENDANCE_TYPE.REGULAR,
         attendanceDate: new Date(today),
         checkinTime: now,
         checkinPhoto: photoPath,
@@ -437,7 +438,7 @@ const checkIn = async (userId, { photoBuffer, photoMimeType, latitude, longitude
         personId,
         dateTime: now,
         attendanceId: attendance.id,
-        attendanceType: ATTENDANCE_TYPE.OFFICE,
+        attendanceType: ATTENDANCE_TYPE.REGULAR,
         action: LOG_ACTION.CHECKIN,
         attendanceLocationId: location.id,
         photo: photoPath,
@@ -499,14 +500,14 @@ const checkOut = async (userId, { photoBuffer, photoMimeType, latitude, longitud
       personId,
       institutionId,
       attendanceDate: new Date(today),
-      attendanceType: ATTENDANCE_TYPE.OFFICE,
+      attendanceType: ATTENDANCE_TYPE.REGULAR,
       isDeleted: false,
     },
   });
 
   if (!existing?.checkinTime) {
     await insertLog({
-      institutionId, personId, action: LOG_ACTION.CHECKOUT, attendanceType: ATTENDANCE_TYPE.OFFICE,
+      institutionId, personId, action: LOG_ACTION.CHECKOUT, attendanceType: ATTENDANCE_TYPE.REGULAR,
       latitude, longitude, distanceMeter: distance, locationStatus,
       status: LOG_STATUS.REJECTED, rejectionReason: ERROR_CODE.CHECKIN_REQUIRED,
       attendanceLocationId, device, ipAddress, now,
@@ -519,7 +520,7 @@ const checkOut = async (userId, { photoBuffer, photoMimeType, latitude, longitud
   // 4. Location validation
   if (!isWithin) {
     await insertLog({
-      institutionId, personId, action: LOG_ACTION.CHECKOUT, attendanceType: ATTENDANCE_TYPE.OFFICE,
+      institutionId, personId, action: LOG_ACTION.CHECKOUT, attendanceType: ATTENDANCE_TYPE.REGULAR,
       latitude, longitude, distanceMeter: distance, locationStatus,
       status: LOG_STATUS.REJECTED, rejectionReason: ERROR_CODE.OUT_OF_RADIUS,
       attendanceId: existing.id, attendanceLocationId, device, ipAddress, now,
@@ -549,7 +550,7 @@ const checkOut = async (userId, { photoBuffer, photoMimeType, latitude, longitud
 
     if (wt.checkoutStart && nowMinutes < timeToMinutes(wt.checkoutStart)) {
       await insertLog({
-        institutionId, personId, action: LOG_ACTION.CHECKOUT, attendanceType: ATTENDANCE_TYPE.OFFICE,
+        institutionId, personId, action: LOG_ACTION.CHECKOUT, attendanceType: ATTENDANCE_TYPE.REGULAR,
         latitude, longitude, distanceMeter: distance, locationStatus,
         status: LOG_STATUS.REJECTED, rejectionReason: ERROR_CODE.CHECKOUT_NOT_ALLOWED,
         attendanceId: existing.id, attendanceLocationId, device, ipAddress, now,
@@ -559,7 +560,7 @@ const checkOut = async (userId, { photoBuffer, photoMimeType, latitude, longitud
 
     if (wt.checkoutEnd && nowMinutes > timeToMinutes(wt.checkoutEnd)) {
       await insertLog({
-        institutionId, personId, action: LOG_ACTION.CHECKOUT, attendanceType: ATTENDANCE_TYPE.OFFICE,
+        institutionId, personId, action: LOG_ACTION.CHECKOUT, attendanceType: ATTENDANCE_TYPE.REGULAR,
         latitude, longitude, distanceMeter: distance, locationStatus,
         status: LOG_STATUS.REJECTED, rejectionReason: ERROR_CODE.CHECKOUT_NOT_ALLOWED,
         attendanceId: existing.id, attendanceLocationId, device, ipAddress, now,
@@ -606,7 +607,7 @@ const checkOut = async (userId, { photoBuffer, photoMimeType, latitude, longitud
         personId,
         dateTime: now,
         attendanceId: existing.id,
-        attendanceType: ATTENDANCE_TYPE.OFFICE,
+        attendanceType: ATTENDANCE_TYPE.REGULAR,
         action: LOG_ACTION.CHECKOUT,
         attendanceLocationId: location.id,
         photo: photoPath,
@@ -645,7 +646,7 @@ const getHistory = async (userId, params = {}) => {
   const where = {
     personId,
     institutionId,
-    attendanceType: params.attendance_type || ATTENDANCE_TYPE.OFFICE,
+    attendanceType: params.attendance_type || ATTENDANCE_TYPE.REGULAR,
     isDeleted: false,
   };
 
@@ -678,39 +679,184 @@ const getHistory = async (userId, params = {}) => {
   };
 };
 
-/**
- * Get paginated attendance logs
- */
-const getLogs = async (userId, params = {}) => {
-  const { personId, institutionId } = await resolveUserContext(userId);
-  const page = parseInt(params.page) || 1;
-  const limit = parseInt(params.limit) || 20;
-  const skip = (page - 1) * limit;
+const LOG_SORT_MAP = {
+  id: 'a.id',
+  attendanceDate: 'a.attendance_date',
+  attendance_date: 'a.attendance_date',
+  dateTime: 'a.attendance_date',
+  date_time: 'a.attendance_date',
+  personName: 'p.name',
+  personNip: 'p.nip',
+  departmentName: 'd.name',
+  status: 'a.status',
+  createdAt: 'a.created_at',
+  created_at: 'a.created_at',
+};
 
-  const where = { personId, institutionId, isDeleted: false };
-  if (params.action) where.action = params.action;
-  if (params.status) where.status = params.status;
-  if (params.start_date || params.end_date) {
-    where.dateTime = {};
-    if (params.start_date) where.dateTime.gte = new Date(params.start_date);
-    if (params.end_date) where.dateTime.lte = new Date(params.end_date);
+const selectAttendanceDTOQuery = `
+  SELECT 
+    a.id,
+    a.institution_id AS institutionId,
+    inst.name AS institutionName,
+    a.person_id AS personId,
+    p.name AS personName,
+    p.nip AS personNip,
+    d.id AS departmentId,
+    d.name AS departmentName,
+    pos.id AS positionId,
+    pos.name AS positionName,
+    a.attendance_type AS attendanceType,
+    a.attendance_date AS attendanceDate,
+    a.checkin_time AS checkinTime,
+    a.checkout_time AS checkoutTime,
+    a.checkin_photo AS checkinPhoto,
+    a.checkout_photo AS checkoutPhoto,
+    a.checkin_location_id AS checkinLocationId,
+    loc_in.name AS checkinLocationName,
+    a.checkin_latitude AS checkinLatitude,
+    a.checkin_longitude AS checkinLongitude,
+    a.checkin_distance_meter AS checkinDistanceMeter,
+    a.checkout_location_id AS checkoutLocationId,
+    loc_out.name AS checkoutLocationName,
+    a.checkout_latitude AS checkoutLatitude,
+    a.checkout_longitude AS checkoutLongitude,
+    a.checkout_distance_meter AS checkoutDistanceMeter,
+    a.status,
+    a.teaching_status AS teachingStatus,
+    a.late_minutes AS lateMinutes,
+    a.early_leave_minutes AS earlyLeaveMinutes,
+    a.overtime_minutes AS overtimeMinutes,
+    a.note,
+    a.created_at AS createdAt
+  FROM attendances a
+  LEFT JOIN m_person p ON a.person_id = p.id
+  LEFT JOIN m_department d ON p.department_id = d.id
+  LEFT JOIN m_position pos ON p.position_id = pos.id
+  LEFT JOIN m_institution inst ON a.institution_id = inst.id
+  LEFT JOIN m_location loc_in ON a.checkin_location_id = loc_in.id
+  LEFT JOIN m_location loc_out ON a.checkout_location_id = loc_out.id
+`;
+
+/**
+ * Resolve paginated attendance records from attendances table (matching institution.service.js pattern)
+ * Supports params: pageNumber, pageSize, q, sortBy, sortType, personId, institutionId, departmentId, positionId, attendanceType, status, startDate, endDate
+ */
+const resolveAll = async (params = {}, userId = null) => {
+  let ctxInstitutionId = null;
+  if (userId) {
+    const user = await prisma.authUser.findFirst({
+      where: { id: userId, isDeleted: false },
+    });
+    if (user && user.institutionId) {
+      ctxInstitutionId = Number(user.institutionId);
+    }
   }
 
-  const [total, items] = await Promise.all([
-    prisma.attendanceLog.count({ where }),
-    prisma.attendanceLog.findMany({
-      where,
-      orderBy: { dateTime: 'desc' },
-      skip,
-      take: limit,
-    }),
-  ]);
+  const { pageNumber, pageSize, skip } = parsePaginationParams(params);
 
-  return {
-    data: items.map(serializeLog),
-    meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
-  };
+  const keyword = params.q ?? null;
+  const status = params.status ?? null;
+  const attendanceType = params.attendanceType ?? params.attendance_type ?? null;
+  const departmentId = params.departmentId ?? params.department_id ?? null;
+  const positionId = params.positionId ?? params.position_id ?? null;
+  const personId = params.personId ?? params.person_id ?? null;
+  const institutionId = params.institutionId ?? params.institution_id ?? null;
+  const startDate = params.startDate ?? params.start_date ?? null;
+  const endDate = params.endDate ?? params.end_date ?? null;
+
+  const sortBy = LOG_SORT_MAP[params.sortBy] ?? 'a.attendance_date';
+  const sortType = params.sortType ?? 'DESC';
+
+  const conditions = ['a.is_deleted = 0'];
+  const values = [];
+
+  // Institution scope filter (allow filter by institutionId or scope to user's institution if assigned)
+  if (institutionId) {
+    conditions.push('a.institution_id = ?');
+    values.push(Number(institutionId));
+  } else if (ctxInstitutionId) {
+    conditions.push('a.institution_id = ?');
+    values.push(ctxInstitutionId);
+  }
+
+  if (personId) {
+    conditions.push('a.person_id = ?');
+    values.push(Number(personId));
+  }
+
+  if (departmentId) {
+    conditions.push('p.department_id = ?');
+    values.push(Number(departmentId));
+  }
+
+  if (positionId) {
+    conditions.push('p.position_id = ?');
+    values.push(Number(positionId));
+  }
+
+  if (attendanceType) {
+    conditions.push('a.attendance_type = ?');
+    values.push(attendanceType);
+  }
+
+  if (status) {
+    conditions.push('a.status = ?');
+    values.push(status);
+  }
+
+  if (startDate) {
+    conditions.push('a.attendance_date >= ?');
+    values.push(`${startDate}`);
+  }
+
+  if (endDate) {
+    conditions.push('a.attendance_date <= ?');
+    values.push(`${endDate}`);
+  }
+
+  if (keyword) {
+    conditions.push('CONCAT(IFNULL(p.name,""), IFNULL(p.nip,""), IFNULL(d.name,""), IFNULL(a.attendance_type,""), IFNULL(a.status,"")) LIKE ?');
+    values.push(`%${keyword}%`);
+  }
+
+  const whereSql = conditions.join(' AND ');
+
+  // Exec Count Subquery
+  const countSql = `SELECT COUNT(*) AS total FROM (${selectAttendanceDTOQuery} WHERE ${whereSql}) x`;
+  const countResult = await prisma.$queryRawUnsafe(countSql, ...values);
+  const total = Number(countResult[0]?.total ?? 0);
+
+  // Exec Data Query
+  const dataSql = `
+    ${selectAttendanceDTOQuery}
+    WHERE ${whereSql}
+    ORDER BY ${sortBy} ${sortType}
+    LIMIT ? OFFSET ?
+  `;
+
+  const items = await prisma.$queryRawUnsafe(dataSql, ...values, pageSize, skip);
+  const formattedItems = (items || []).map((item) => ({
+    ...item,
+    id: Number(item.id),
+    personId: Number(item.personId),
+    institutionId: Number(item.institutionId),
+    departmentId: item.departmentId ? Number(item.departmentId) : null,
+    checkinLocationId: item.checkinLocationId ? Number(item.checkinLocationId) : null,
+    checkoutLocationId: item.checkoutLocationId ? Number(item.checkoutLocationId) : null,
+    checkinLatitude: item.checkinLatitude ? Number(item.checkinLatitude) : null,
+    checkinLongitude: item.checkinLongitude ? Number(item.checkinLongitude) : null,
+    checkinDistanceMeter: item.checkinDistanceMeter ? Number(item.checkinDistanceMeter) : null,
+    checkoutLatitude: item.checkoutLatitude ? Number(item.checkoutLatitude) : null,
+    checkoutLongitude: item.checkoutLongitude ? Number(item.checkoutLongitude) : null,
+    checkoutDistanceMeter: item.checkoutDistanceMeter ? Number(item.checkoutDistanceMeter) : null,
+    checkinPhoto: storage.getUrl(item.checkinPhoto),
+    checkoutPhoto: storage.getUrl(item.checkoutPhoto),
+  }));
+
+  return paginate(formattedItems, total, pageNumber, pageSize);
 };
+
+const getLogs = async (userId, params = {}) => resolveAll(params, userId);
 
 // ==================== Helpers ====================
 
@@ -809,4 +955,5 @@ module.exports = {
   checkOut,
   getHistory,
   getLogs,
+  resolveAll,
 };
