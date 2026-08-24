@@ -9,6 +9,15 @@ BigInt.prototype.toJSON = function () {
 };
 
 /**
+ * Ensure DATABASE_URL includes serverless pool limits and SSL parameters
+ */
+let dbUrl = process.env.DATABASE_URL || '';
+if (dbUrl && !dbUrl.includes('connection_limit')) {
+  const separator = dbUrl.includes('?') ? '&' : '?';
+  dbUrl += `${separator}connection_limit=3&pool_timeout=10&connect_timeout=15&sslmode=REQUIRED`;
+}
+
+/**
  * Prisma Client Singleton & Connection Resiliency for Serverless (Vercel + Aiven)
  */
 const globalForPrisma = global;
@@ -16,6 +25,13 @@ const globalForPrisma = global;
 const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
+    datasources: dbUrl
+      ? {
+          db: {
+            url: dbUrl,
+          },
+        }
+      : undefined,
     log: process.env.NODE_ENV === 'development' ? ['warn', 'error'] : ['error'],
   });
 
