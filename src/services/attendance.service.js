@@ -127,17 +127,12 @@ const getTodayAttendance = async (userId) => {
     timeWindowStatus = 'HOLIDAY_DISABLED';
     timeWindowMessage = 'Presensi pada hari libur / non-shift kerja saat ini dinonaktifkan oleh administrator.';
   } else {
-    if (!hasCheckin) {
+    if (isCheckoutWindowActive) {
+      canCheckin = false;
+      canCheckout = true;
+    } else {
       canCheckin = true;
       canCheckout = false;
-    } else {
-      if (isCheckoutWindowActive) {
-        canCheckin = false;
-        canCheckout = true;
-      } else {
-        canCheckin = true;
-        canCheckout = false;
-      }
     }
 
     // Enforce time windows only if it's a designated working day with workTime
@@ -194,18 +189,11 @@ const getTodayAttendance = async (userId) => {
 };
 
 /**
- * Helper to get candidate dayOfWeek numbers for querying.
- * Supports:
- * - MySQL standard DAYOFWEEK (1 = Sunday, 2 = Monday, ..., 7 = Saturday)
- * - ISO-8601 standard (1 = Monday, ..., 7 = Sunday)
- * - JavaScript Date.getDay() (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
+ * Helper to get exact ISO-8601 dayOfWeek number for querying (1 = Mon, 2 = Tue, ..., 7 = Sun).
  */
-const getDayOfWeekCandidates = (date) => {
+const getIsoDayOfWeek = (date) => {
   const jsDay = date.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
-  const mysqlDay = jsDay + 1;  // 1=Sun, 2=Mon, ..., 7=Sat (Standard MySQL DAYOFWEEK)
-  const isoDay = jsDay === 0 ? 7 : jsDay; // 1=Mon, ..., 7=Sun (ISO 8601)
-
-  return Array.from(new Set([jsDay, mysqlDay, isoDay]));
+  return jsDay === 0 ? 7 : jsDay;
 };
 
 /**
@@ -213,7 +201,7 @@ const getDayOfWeekCandidates = (date) => {
  */
 const getActiveShiftForToday = async (personId, date) => {
   const dateOnly = new Date(date.toDateString());
-  const daysToMatch = getDayOfWeekCandidates(date);
+  const isoDay = getIsoDayOfWeek(date);
 
   // Find shift pattern active today
   const pattern = await prisma.workShiftPattern.findFirst({
@@ -230,7 +218,7 @@ const getActiveShiftForToday = async (personId, date) => {
       shift: {
         include: {
           details: {
-            where: { dayOfWeek: { in: daysToMatch }, isDeleted: false },
+            where: { isDeleted: false },
             include: { workTime: true },
           },
         },
@@ -241,15 +229,18 @@ const getActiveShiftForToday = async (personId, date) => {
 
   if (!pattern?.shift) return null;
 
-  const detail = pattern.shift.details[0];
+  // Match exact dayOfWeek (ISO day 1-7 or fallback JS day 0-6)
+  const detail = pattern.shift.details.find((d) => d.dayOfWeek === isoDay)
+    ?? pattern.shift.details.find((d) => d.dayOfWeek === date.getDay());
+
   if (!detail) return null;
 
   return {
     shiftId: pattern.shiftId,
     shiftName: pattern.shift.name,
     dayOfWeek: detail.dayOfWeek,
-    isWorkingDay: detail.isWorkingDay,
-    workTime: detail.workTime
+    isWorkingDay: Boolean(detail.isWorkingDay),
+    workTime: (Boolean(detail.isWorkingDay) && detail.workTime)
       ? {
           id: detail.workTime.id,
           code: detail.workTime.code,
@@ -505,15 +496,6 @@ const checkOut = async (userId, { photoBuffer, photoMimeType, latitude, longitud
     },
   });
 
-  if (!existing?.checkinTime) {
-    await insertLog({
-      institutionId, personId, action: LOG_ACTION.CHECKOUT, attendanceType: ATTENDANCE_TYPE.REGULAR,
-      latitude, longitude, distanceMeter: distance, locationStatus,
-      status: LOG_STATUS.REJECTED, rejectionReason: ERROR_CODE.CHECKIN_REQUIRED,
-      attendanceLocationId, device, ipAddress, now,
-    });
-    throw { status: 400, message: 'Anda belum melakukan check-in hari ini', code: ERROR_CODE.CHECKIN_REQUIRED };
-  }
 
   // Note: Re-checkout is allowed to update checkoutTime and checkoutPhoto to the latest time
 
@@ -523,7 +505,7 @@ const checkOut = async (userId, { photoBuffer, photoMimeType, latitude, longitud
       institutionId, personId, action: LOG_ACTION.CHECKOUT, attendanceType: ATTENDANCE_TYPE.REGULAR,
       latitude, longitude, distanceMeter: distance, locationStatus,
       status: LOG_STATUS.REJECTED, rejectionReason: ERROR_CODE.OUT_OF_RADIUS,
-      attendanceId: existing.id, attendanceLocationId, device, ipAddress, now,
+      attendanceId: existing?.id ?? null, attendanceLocationId, device, ipAddress, now,
     });
     throw {
       status: 400,
@@ -553,7 +535,7 @@ const checkOut = async (userId, { photoBuffer, photoMimeType, latitude, longitud
         institutionId, personId, action: LOG_ACTION.CHECKOUT, attendanceType: ATTENDANCE_TYPE.REGULAR,
         latitude, longitude, distanceMeter: distance, locationStatus,
         status: LOG_STATUS.REJECTED, rejectionReason: ERROR_CODE.CHECKOUT_NOT_ALLOWED,
-        attendanceId: existing.id, attendanceLocationId, device, ipAddress, now,
+        attendanceId: existing?.id ?? null, attendanceLocationId, device, ipAddress, now,
       });
       throw { status: 400, message: `Presensi pulang belum dibuka. Jam pulang: ${wt.checkoutStart} – ${wt.checkoutEnd}`, code: ERROR_CODE.CHECKOUT_NOT_ALLOWED };
     }
@@ -563,7 +545,7 @@ const checkOut = async (userId, { photoBuffer, photoMimeType, latitude, longitud
         institutionId, personId, action: LOG_ACTION.CHECKOUT, attendanceType: ATTENDANCE_TYPE.REGULAR,
         latitude, longitude, distanceMeter: distance, locationStatus,
         status: LOG_STATUS.REJECTED, rejectionReason: ERROR_CODE.CHECKOUT_NOT_ALLOWED,
-        attendanceId: existing.id, attendanceLocationId, device, ipAddress, now,
+        attendanceId: existing?.id ?? null, attendanceLocationId, device, ipAddress, now,
       });
       throw { status: 400, message: `Batas waktu presensi pulang telah berakhir (${wt.checkoutEnd})`, code: ERROR_CODE.CHECKOUT_NOT_ALLOWED };
     }
@@ -585,28 +567,53 @@ const checkOut = async (userId, { photoBuffer, photoMimeType, latitude, longitud
 
   // 7. Transaction: insert log + update attendance
   const result = await prisma.$transaction(async (tx) => {
-    const updated = await tx.attendance.update({
-      where: { id: existing.id },
-      data: {
-        checkoutTime: now,
-        checkoutPhoto: photoPath,
-        checkoutLocationId: location.id,
-        checkoutLatitude: Number(latitude),
-        checkoutLongitude: Number(longitude),
-        checkoutDistanceMeter: distance,
-        earlyLeaveMinutes,
-        overtimeMinutes,
-        updatedAt: now,
-        updatedBy: userId,
-      },
-    });
+    let attendanceRecord;
+    if (existing) {
+      attendanceRecord = await tx.attendance.update({
+        where: { id: existing.id },
+        data: {
+          checkoutTime: now,
+          checkoutPhoto: photoPath,
+          checkoutLocationId: location.id,
+          checkoutLatitude: Number(latitude),
+          checkoutLongitude: Number(longitude),
+          checkoutDistanceMeter: distance,
+          earlyLeaveMinutes,
+          overtimeMinutes,
+          status: existing.status || (isNonWorkingDay ? ATTENDANCE_STATUS.PRESENT : ATTENDANCE_STATUS.LATE),
+          updatedAt: now,
+          updatedBy: userId,
+        },
+      });
+    } else {
+      attendanceRecord = await tx.attendance.create({
+        data: {
+          institutionId,
+          personId,
+          attendanceType: ATTENDANCE_TYPE.REGULAR,
+          attendanceDate: new Date(today),
+          checkinTime: null,
+          checkoutTime: now,
+          checkoutPhoto: photoPath,
+          checkoutLocationId: location.id,
+          checkoutLatitude: Number(latitude),
+          checkoutLongitude: Number(longitude),
+          checkoutDistanceMeter: distance,
+          status: isNonWorkingDay ? ATTENDANCE_STATUS.PRESENT : ATTENDANCE_STATUS.LATE,
+          earlyLeaveMinutes,
+          overtimeMinutes,
+          createdAt: now,
+          createdBy: userId,
+        },
+      });
+    }
 
     await tx.attendanceLog.create({
       data: {
         institutionId,
         personId,
         dateTime: now,
-        attendanceId: existing.id,
+        attendanceId: attendanceRecord.id,
         attendanceType: ATTENDANCE_TYPE.REGULAR,
         action: LOG_ACTION.CHECKOUT,
         attendanceLocationId: location.id,
@@ -623,7 +630,7 @@ const checkOut = async (userId, { photoBuffer, photoMimeType, latitude, longitud
       },
     });
 
-    return updated;
+    return attendanceRecord;
   });
 
   return {
@@ -658,7 +665,7 @@ const getHistory = async (userId, params = {}) => {
     if (params.end_date) where.attendanceDate.lte = new Date(params.end_date);
   }
 
-  const [total, items] = await Promise.all([
+  const [total, items, locations] = await Promise.all([
     prisma.attendance.count({ where }),
     prisma.attendance.findMany({
       where,
@@ -666,10 +673,26 @@ const getHistory = async (userId, params = {}) => {
       skip,
       take: limit,
     }),
+    prisma.mLocation.findMany({
+      where: { institutionId, isDeleted: false },
+    }),
   ]);
 
+  const locationMap = new Map(locations.map((loc) => [loc.id, loc.name]));
+
+  const data = items.map((att) => {
+    const serialized = serializeAttendance(att);
+    const inLocName = att.checkinLocationId ? locationMap.get(att.checkinLocationId) : null;
+    const outLocName = att.checkoutLocationId ? locationMap.get(att.checkoutLocationId) : null;
+    const defaultLocName = locations.length > 0 ? locations[0].name : null;
+    serialized.checkinLocationName = inLocName || defaultLocName;
+    serialized.checkoutLocationName = outLocName || defaultLocName;
+    serialized.locationName = inLocName || outLocName || defaultLocName;
+    return serialized;
+  });
+
   return {
-    data: items.map(serializeAttendance),
+    data,
     meta: {
       total,
       page,
@@ -921,6 +944,9 @@ const serializeAttendance = (a) => ({
   checkoutLatitude: a.checkoutLatitude ? Number(a.checkoutLatitude) : null,
   checkoutLongitude: a.checkoutLongitude ? Number(a.checkoutLongitude) : null,
   checkoutDistanceMeter: a.checkoutDistanceMeter ? Number(a.checkoutDistanceMeter) : null,
+  checkinLocationName: a.checkinLocation?.name ?? null,
+  checkoutLocationName: a.checkoutLocation?.name ?? null,
+  locationName: a.checkinLocation?.name ?? a.checkoutLocation?.name ?? null,
   status: a.status,
   lateMinutes: a.lateMinutes,
   earlyLeaveMinutes: a.earlyLeaveMinutes,

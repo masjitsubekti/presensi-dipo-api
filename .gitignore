@@ -10,3 +10,5 @@ prisma/migrations/
 public/uploads/*
 
 
+.vercel
+.env*

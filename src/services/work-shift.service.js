@@ -178,15 +178,19 @@ const create = async (data, user = null) => {
 
     // Insert Details if provided
     if (Array.isArray(data.details) && data.details.length > 0) {
-      const detailsData = data.details.map((d) => ({
-        id: uuidv4(),
-        shiftId: shiftId,
-        dayOfWeek: Number(d.dayOfWeek ?? d.day_of_week),
-        workTimeId: d.workTimeId ?? d.work_time_id ? Number(d.workTimeId ?? d.work_time_id) : null,
-        isWorkingDay: parseBoolean(d.isWorkingDay ?? d.is_working_day, true),
-        createdAt: now,
-        createdBy: userId,
-      }));
+      const detailsData = data.details.map((d) => {
+        const isWorking = parseBoolean(d.isWorkingDay ?? d.is_working_day, true);
+        const rawWtId = d.workTimeId ?? d.work_time_id;
+        return {
+          id: uuidv4(),
+          shiftId: shiftId,
+          dayOfWeek: Number(d.dayOfWeek ?? d.day_of_week),
+          workTimeId: (isWorking && rawWtId) ? Number(rawWtId) : null,
+          isWorkingDay: isWorking,
+          createdAt: now,
+          createdBy: userId,
+        };
+      });
 
       await tx.workShiftDetail.createMany({
         data: detailsData,
@@ -225,15 +229,19 @@ const update = async (id, data, user = null) => {
 
       // Insert new details
       if (data.details.length > 0) {
-        const detailsData = data.details.map((d) => ({
-          id: uuidv4(),
-          shiftId: String(id),
-          dayOfWeek: Number(d.dayOfWeek ?? d.day_of_week),
-          workTimeId: d.workTimeId ?? d.work_time_id ? Number(d.workTimeId ?? d.work_time_id) : null,
-          isWorkingDay: parseBoolean(d.isWorkingDay ?? d.is_working_day, true),
-          createdAt: now,
-          createdBy: userId,
-        }));
+        const detailsData = data.details.map((d) => {
+          const isWorking = parseBoolean(d.isWorkingDay ?? d.is_working_day, true);
+          const rawWtId = d.workTimeId ?? d.work_time_id;
+          return {
+            id: uuidv4(),
+            shiftId: String(id),
+            dayOfWeek: Number(d.dayOfWeek ?? d.day_of_week),
+            workTimeId: (isWorking && rawWtId) ? Number(rawWtId) : null,
+            isWorkingDay: isWorking,
+            createdAt: now,
+            createdBy: userId,
+          };
+        });
 
         await tx.workShiftDetail.createMany({
           data: detailsData,
