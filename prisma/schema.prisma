@@ -394,3 +394,55 @@ model AttendanceLog {
   @@index([institutionId, attendanceType, dateTime], map: "attendance_log_institution_type_datetime")
   @@map("attendance_logs")
 }
+
+// ==================== ATTENDANCE TYPE / MASTER JENIS PRESENSI & IZIN ====================
+
+model MAttendanceType {
+  id                 Int                 @id @default(autoincrement()) @db.UnsignedInt
+  code               String              @db.VarChar(50)
+  name               String              @db.VarChar(255)
+  category           String              @db.VarChar(50)
+  countsAsPresent    Boolean             @default(false) @map("counts_as_present")
+  requiresApproval   Boolean             @default(false) @map("requires_approval")
+  requiresAttendance Boolean             @default(false) @map("requires_attendance")
+  colorLabel         String?             @map("color_label") @db.VarChar(50)
+  isActive           Boolean             @default(true) @map("is_active")
+  createdAt          DateTime?           @map("created_at") @db.DateTime(0)
+  createdBy          String?             @map("created_by") @db.VarChar(36)
+  updatedAt          DateTime?           @updatedAt @map("updated_at") @db.DateTime(0)
+  updatedBy          String?             @map("updated_by") @db.VarChar(36)
+  deletedAt          DateTime?           @map("deleted_at") @db.DateTime(0)
+  isDeleted          Boolean             @default(false) @map("is_deleted")
+  attendanceRequests AttendanceRequest[]
+
+  @@map("m_attendance_type")
+}
+
+model AttendanceRequest {
+  id               Int              @id @default(autoincrement()) @db.UnsignedInt
+  institutionId    Int              @map("institution_id") @db.UnsignedInt
+  personId         Int              @map("person_id") @db.UnsignedInt
+  attendanceTypeId Int              @map("attendance_type_id") @db.UnsignedInt
+  startDate        DateTime         @map("start_date") @db.Date
+  endDate          DateTime         @map("end_date") @db.Date
+  startTime        String?          @map("start_time") @db.VarChar(10)
+  endTime          String?          @map("end_time") @db.VarChar(10)
+  durationType     String           @map("duration_type") @db.VarChar(20)
+  reason           String?          @db.Text
+  filePath         String?          @map("file_path") @db.VarChar(500)
+  status           String           @default("pending") @db.VarChar(20)
+  approvedBy       String?          @map("approved_by") @db.VarChar(36)
+  approvedAt       DateTime?        @map("approved_at") @db.DateTime(0)
+  approvalNote     String?          @map("approval_note") @db.Text
+  createdAt        DateTime?        @map("created_at") @db.DateTime(0)
+  createdBy        String?          @map("created_by") @db.VarChar(36)
+  updatedAt        DateTime?        @updatedAt @map("updated_at") @db.DateTime(0)
+  updatedBy        String?          @map("updated_by") @db.VarChar(36)
+  deletedAt        DateTime?        @map("deleted_at") @db.DateTime(0)
+  isDeleted        Boolean          @default(false) @map("is_deleted")
+  attendanceType   MAttendanceType? @relation(fields: [attendanceTypeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([institutionId, personId, startDate, endDate], map: "attendance_request_institution_person_dates")
+  @@index([institutionId, status], map: "attendance_request_institution_status")
+  @@map("attendance_requests")
+}

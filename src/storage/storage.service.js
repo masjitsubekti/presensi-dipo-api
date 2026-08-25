@@ -30,12 +30,17 @@ const ensureDir = (dir) => {
  * @param {string} mimeType
  * @returns {string}
  */
-const generateFilename = (originalName, mimeType) => {
-  const ext = mimeType === 'image/webp'
-    ? '.webp'
-    : mimeType === 'image/png'
-    ? '.png'
-    : '.jpg';
+const generateFilename = (originalName = '', mimeType = '') => {
+  let ext = path.extname(originalName);
+  if (!ext) {
+    ext = mimeType === 'application/pdf'
+      ? '.pdf'
+      : mimeType === 'image/webp'
+      ? '.webp'
+      : mimeType === 'image/png'
+      ? '.png'
+      : '.jpg';
+  }
   const random = crypto.randomBytes(16).toString('hex');
   const timestamp = Date.now();
   return `${timestamp}_${random}${ext}`;
