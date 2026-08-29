@@ -129,6 +129,14 @@ const resolveAll = async (params = {}, userId = null) => {
   }
 
   const { pageNumber, pageSize, skip } = parsePaginationParams(params);
+  const parseBoolean = (val, defaultVal = false) => {
+    if (val === null || val === undefined) return defaultVal;
+    if (typeof val === 'boolean') return val;
+    if (typeof val === 'number') return val === 1;
+    if (typeof val === 'string') return val === 'true' || val === '1';
+    return Boolean(val);
+  };
+  const ignorePaging = parseBoolean(params.ignorePaging, false);
 
   const keyword = params.q ?? null;
   const status = params.status ?? null;
@@ -207,14 +215,20 @@ const resolveAll = async (params = {}, userId = null) => {
   const countResult = await prisma.$queryRawUnsafe(countSql, ...values);
   const total = Number(countResult[0]?.total ?? 0);
 
-  const dataSql = `
+  let dataSql = `
     ${selectAttendanceRequestDTOQuery}
     WHERE ${whereSql}
     ORDER BY ${sortBy} ${sortType}
-    LIMIT ? OFFSET ?
   `;
 
-  const items = await prisma.$queryRawUnsafe(dataSql, ...values, pageSize, skip);
+  let items;
+  if (ignorePaging) {
+    items = await prisma.$queryRawUnsafe(dataSql, ...values);
+  } else {
+    dataSql += ` LIMIT ? OFFSET ?`;
+    items = await prisma.$queryRawUnsafe(dataSql, ...values, pageSize, skip);
+  }
+
   const formattedItems = (items || []).map((item) => ({
     ...item,
     id: Number(item.id),
@@ -226,7 +240,7 @@ const resolveAll = async (params = {}, userId = null) => {
     filePathUrl: storage.getUrl(item.filePath),
   }));
 
-  return paginate(formattedItems, total, pageNumber, pageSize);
+  return paginate(formattedItems, total, pageNumber, ignorePaging ? (total || 1) : pageSize);
 };
 
 const resolveById = async (id) => {

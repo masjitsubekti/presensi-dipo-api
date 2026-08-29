@@ -56,6 +56,7 @@ const resolveAll = async (params = {}) => {
   const roleId = params.roleId ?? params.role_id ?? null;
   const personId = params.personId ?? params.person_id ?? null;
   const institutionId = params.institutionId ?? params.institution_id ?? null;
+  const ignorePaging = parseBoolean(params.ignorePaging, false);
 
   const sortBy = SORT_MAP[params.sortBy] ?? 'u.created_at';
   const sortType = params.sortType ?? 'DESC';
@@ -94,14 +95,20 @@ const resolveAll = async (params = {}) => {
   const countResult = await prisma.$queryRawUnsafe(countSql, ...values);
   const total = Number(countResult[0]?.total ?? 0);
 
-  const dataSql = `
+  let dataSql = `
     ${selectUserDTOQuery}
     WHERE ${whereSql}
     ORDER BY ${sortBy} ${sortType}
-    LIMIT ? OFFSET ?
   `;
 
-  const items = await prisma.$queryRawUnsafe(dataSql, ...values, pageSize, skip);
+  let items;
+  if (ignorePaging) {
+    items = await prisma.$queryRawUnsafe(dataSql, ...values);
+  } else {
+    dataSql += ` LIMIT ? OFFSET ?`;
+    items = await prisma.$queryRawUnsafe(dataSql, ...values, pageSize, skip);
+  }
+
   const formattedItems = (items || []).map((item) => ({
     ...item,
     personId: item.personId ? Number(item.personId) : null,
@@ -110,7 +117,7 @@ const resolveAll = async (params = {}) => {
     isActive: parseBoolean(item.active),
   }));
 
-  return paginate(formattedItems, total, pageNumber, pageSize);
+  return paginate(formattedItems, total, pageNumber, ignorePaging ? (total || 1) : pageSize);
 };
 
 const getAll = async (params = {}) => {

@@ -67,6 +67,7 @@ const resolveAll = async (params = {}) => {
   const keyword = params.q ?? null;
   const levelId = params.levelId ?? null;
   const isActive = params.isActive ?? undefined;
+  const ignorePaging = parseBoolean(params.ignorePaging, false);
 
   const sortBy = SORT_MAP[params.sortBy] ?? 'i.created_at';
   const sortType = params.sortType ?? 'DESC';
@@ -98,20 +99,26 @@ const resolveAll = async (params = {}) => {
   const total = Number(countResult[0]?.total ?? 0);
 
   // Exec Data Query 
-  const dataSql = `
+  let dataSql = `
     ${selectInstitutionDTOQuery}
     WHERE ${whereSql}
     ORDER BY ${sortBy} ${sortType}
-    LIMIT ? OFFSET ?
   `;
 
-  const items = await prisma.$queryRawUnsafe(dataSql, ...values, pageSize, skip);
+  let items;
+  if (ignorePaging) {
+    items = await prisma.$queryRawUnsafe(dataSql, ...values);
+  } else {
+    dataSql += ` LIMIT ? OFFSET ?`;
+    items = await prisma.$queryRawUnsafe(dataSql, ...values, pageSize, skip);
+  }
+
   const formattedItems = (items || []).map((item) => ({
     ...item,
     isActive: parseBoolean(item.isActive),
   }));
 
-  return paginate(formattedItems, total, pageNumber, pageSize);
+  return paginate(formattedItems, total, pageNumber, ignorePaging ? (total || 1) : pageSize);
 };
 
 const getAll = async () => {

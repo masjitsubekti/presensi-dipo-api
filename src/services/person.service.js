@@ -63,6 +63,14 @@ const personSelect = {
   isDeleted: true,
 };
 
+const parseBoolean = (val, defaultVal = false) => {
+  if (val === null || val === undefined) return defaultVal;
+  if (typeof val === 'boolean') return val;
+  if (typeof val === 'number') return val === 1;
+  if (typeof val === 'string') return val === 'true' || val === '1';
+  return Boolean(val);
+};
+
 const resolveAll = async (params = {}) => {
   const { pageNumber, pageSize, skip } = parsePaginationParams(params);
   const keyword = params.q ?? null;
@@ -70,6 +78,7 @@ const resolveAll = async (params = {}) => {
   const positionId = params.positionId ?? params.position_id ?? null;
   const departmentId = params.departmentId ?? params.department_id ?? null;
   const status = params.status ?? null;
+  const ignorePaging = parseBoolean(params.ignorePaging, false);
 
   const sortBy = SORT_MAP[params.sortBy] ?? 'p.created_at';
   const sortType = params.sortType ?? 'DESC';
@@ -108,16 +117,21 @@ const resolveAll = async (params = {}) => {
   const countResult = await prisma.$queryRawUnsafe(countSql, ...values);
   const total = Number(countResult[0]?.total ?? 0);
 
-  const dataSql = `
+  let dataSql = `
     ${selectPersonDTOQuery}
     WHERE ${whereSql}
     ORDER BY ${sortBy} ${sortType}
-    LIMIT ? OFFSET ?
   `;
 
-  const items = await prisma.$queryRawUnsafe(dataSql, ...values, pageSize, skip);
+  let items;
+  if (ignorePaging) {
+    items = await prisma.$queryRawUnsafe(dataSql, ...values);
+  } else {
+    dataSql += ` LIMIT ? OFFSET ?`;
+    items = await prisma.$queryRawUnsafe(dataSql, ...values, pageSize, skip);
+  }
 
-  return paginate(items, total, pageNumber, pageSize);
+  return paginate(items, total, pageNumber, ignorePaging ? (total || 1) : pageSize);
 };
 
 const getAll = async (params = {}) => {

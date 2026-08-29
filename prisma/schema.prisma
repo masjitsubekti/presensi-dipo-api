@@ -143,6 +143,7 @@ model MInstitution {
   persons     MPerson[]
   positions   MPosition[]
   workShifts  WorkShift[]
+  holidays    MHoliday[]
 
   @@map("m_institution")
 }
@@ -446,3 +447,26 @@ model AttendanceRequest {
   @@index([institutionId, status], map: "attendance_request_institution_status")
   @@map("attendance_requests")
 }
+
+// ==================== MASTER HARI LIBUR ====================
+
+model MHoliday {
+  id            Int           @id @default(autoincrement()) @db.UnsignedInt
+  institutionId Int?          @map("institution_id") @db.UnsignedInt
+  date          DateTime      @db.Date
+  title         String        @db.VarChar(255)
+  type          String?       @db.VarChar(100)
+  isNational    Boolean       @default(false) @map("is_national")
+  createdBy     String?       @map("created_by") @db.VarChar(36)
+  updatedBy     String?       @map("updated_by") @db.VarChar(36)
+  createdAt     DateTime?     @map("created_at") @db.Timestamp(0)
+  updatedAt     DateTime?     @updatedAt @map("updated_at") @db.Timestamp(0)
+  deletedAt     DateTime?     @map("deleted_at") @db.Timestamp(0)
+  isDeleted     Boolean       @default(false) @map("is_deleted")
+  institution   MInstitution? @relation(fields: [institutionId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([institutionId], map: "m_holiday_institution_id_foreign")
+  @@map("m_holiday")
+}
+
+

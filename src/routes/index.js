@@ -8,19 +8,10 @@ const roleRoutes = require('./role.routes');
 const menuRoutes = require('./menu.routes');
 const menuRoleRoutes = require('./menu-role.routes');
 const appConfigRoutes = require('./app-config.routes');
-const institutionRoutes = require('./institution.routes');
-const levelRoutes = require('./level.routes');
-const positionRoutes = require('./position.routes');
-const departmentRoutes = require('./department.routes');
-const personRoutes = require('./person.routes');
-const workTimeRoutes = require('./work-time.routes');
-const workShiftRoutes = require('./work-shift.routes');
-const workShiftPatternRoutes = require('./work-shift-pattern.routes');
+const masterRoutes = require('./master.routes');
 const attendanceRoutes = require('./attendance.routes');
-const locationRoutes = require('./location.routes');
-const attendanceTypeRoutes = require('./attendance-type.routes');
 const attendanceRequestRoutes = require('./attendance-request.routes');
-
+const reportRoutes = require('./report.routes');
 
 // ==================== Health ====================
 router.use('/health', healthRoutes);
@@ -39,22 +30,13 @@ router.use('/menu-role', menuRoleRoutes);
 router.use('/app-config', appConfigRoutes);
 
 // Master Data
-router.use('/master/institution', institutionRoutes);
-router.use('/master/level', levelRoutes);
-router.use('/master/position', positionRoutes);
-router.use('/master/department', departmentRoutes);
-router.use('/master/person', personRoutes);
-router.use('/master/work-time', workTimeRoutes);
-router.use('/master/work-shift', workShiftRoutes);
-router.use('/master/work-shift-pattern', workShiftPatternRoutes);
-router.use('/master/attendance-type', attendanceTypeRoutes);
+router.use('/master', masterRoutes);
 
 // ==================== Attendance & Requests ====================
 router.use('/attendance', attendanceRoutes);
 router.use('/attendance-request', attendanceRequestRoutes);
 
-// ==================== Master: Location ====================
-router.use('/master/location', locationRoutes);
+// ==================== Report ====================
+router.use('/report', reportRoutes);
 
 module.exports = router;
-
