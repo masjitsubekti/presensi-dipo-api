@@ -1,53 +1,16 @@
 const prisma = require('../config/prisma');
+const { formatTz } = require('../utils/timezone');
 
 /**
  * Report Service (MySQL Raw Query)
  * Generates Rekap Presensi Pegawai per Bulan & Tahun
  */
 
-const MONTH_NAMES = [
-  'JANUARI', 'FEBRUARI', 'MARET', 'APRIL', 'MEI', 'JUNI',
-  'JULI', 'AGUSTUS', 'SEPTEMBER', 'OKTOBER', 'NOVEMBER', 'DESEMBER'
-];
+const { MONTH_NAMES, DAY_NAMES } = require('../constants/attendance.constants');
 
-const DAY_NAMES = [
-  'MINGGU', 'SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT', 'SABTU'
-];
-
-const parseBoolean = (val, defaultVal = false) => {
-  if (val === null || val === undefined) return defaultVal;
-  if (typeof val === 'boolean') return val;
-  if (typeof val === 'number') return val === 1;
-  if (typeof val === 'string') return val === 'true' || val === '1';
-  return Boolean(val);
-};
-
-const formatTime = (dateObj) => {
-  if (!dateObj) return null;
-  const d = new Date(dateObj);
-  if (isNaN(d.getTime())) return null;
-  const hours = String(d.getHours()).padStart(2, '0');
-  const minutes = String(d.getMinutes()).padStart(2, '0');
-  return `${hours}:${minutes}`;
-};
-
-const formatDateDDMMYYYY = (dateObj) => {
-  if (!dateObj) return '';
-  const d = new Date(dateObj);
-  const day = String(d.getDate()).padStart(2, '0');
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const year = d.getFullYear();
-  return `${day}/${month}/${year}`;
-};
-
-const formatDateYYYYMMDD = (dateObj) => {
-  if (!dateObj) return '';
-  const d = new Date(dateObj);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
+const formatTime = (date) => formatTz(date, 'HH:mm');
+const formatDateDDMMYYYY = (date) => formatTz(date, 'DD/MM/YYYY') || '';
+const formatDateYYYYMMDD = (date) => formatTz(date, 'YYYY-MM-DD') || '';
 
 const getEmployeeRecap = async (params = {}) => {
   const personId = Number(params.personId || params.person_id);
@@ -95,10 +58,18 @@ const getEmployeeRecap = async (params = {}) => {
   // 3. Fetch Attendances via Raw SQL
   const attendanceSql = `
     SELECT 
-      a.id, a.attendance_date AS attendanceDate, a.attendance_type AS attendanceType,
-      a.checkin_time AS checkinTime, a.checkout_time AS checkoutTime,
-      a.late_minutes AS lateMinutes, a.early_leave_minutes AS earlyLeaveMinutes,
-      a.status, a.note
+      a.id, 
+      DATE_FORMAT(a.attendance_date, '%Y-%m-%d') AS attendanceDateStr,
+      a.attendance_date AS attendanceDate, 
+      a.attendance_type AS attendanceType,
+      DATE_FORMAT(a.checkin_time, '%H:%i') AS checkinTimeStr,
+      DATE_FORMAT(a.checkout_time, '%H:%i') AS checkoutTimeStr,
+      a.checkin_time AS checkinTime, 
+      a.checkout_time AS checkoutTime,
+      a.late_minutes AS lateMinutes, 
+      a.early_leave_minutes AS earlyLeaveMinutes,
+      a.status, 
+      a.note
     FROM attendances a
     WHERE a.person_id = ? 
       AND a.attendance_date >= ? 
@@ -109,7 +80,7 @@ const getEmployeeRecap = async (params = {}) => {
   
   const attendanceMap = {};
   (attendanceRows || []).forEach((row) => {
-    const key = formatDateYYYYMMDD(row.attendanceDate);
+    const key = row.attendanceDateStr || formatDateYYYYMMDD(row.attendanceDate);
     attendanceMap[key] = row;
   });
 
@@ -256,13 +227,13 @@ const getEmployeeRecap = async (params = {}) => {
       if (matchedRequest.startTime) nonRegularMasuk = matchedRequest.startTime;
       if (matchedRequest.endTime) nonRegularPulang = matchedRequest.endTime;
     } else {
-      const hasCheckin = Boolean(attendance && attendance.checkinTime);
-      const hasCheckout = Boolean(attendance && attendance.checkoutTime);
+      const hasCheckin = Boolean(attendance && (attendance.checkinTimeStr || attendance.checkinTime));
+      const hasCheckout = Boolean(attendance && (attendance.checkoutTimeStr || attendance.checkoutTime));
 
       if (hasCheckin && hasCheckout) {
         // Both Check-in and Check-out present -> Hadir
-        regularMasuk = formatTime(attendance.checkinTime) || '-';
-        regularPulang = formatTime(attendance.checkoutTime) || '-';
+        regularMasuk = attendance.checkinTimeStr || formatTime(attendance.checkinTime) || '-';
+        regularPulang = attendance.checkoutTimeStr || formatTime(attendance.checkoutTime) || '-';
         keterangan = 'H';
         categoryClass = 'hadir';
         countHadir++;
@@ -291,8 +262,8 @@ const getEmployeeRecap = async (params = {}) => {
         }
       } else if (hasCheckin || hasCheckout) {
         // One is present, but the other is missing -> Mangkir
-        if (hasCheckin) regularMasuk = formatTime(attendance.checkinTime) || '-';
-        if (hasCheckout) regularPulang = formatTime(attendance.checkoutTime) || '-';
+        if (hasCheckin) regularMasuk = attendance.checkinTimeStr || formatTime(attendance.checkinTime) || '-';
+        if (hasCheckout) regularPulang = attendance.checkoutTimeStr || formatTime(attendance.checkoutTime) || '-';
         keterangan = 'M';
         categoryClass = 'mangkir';
         countMangkir++;
@@ -333,7 +304,7 @@ const getEmployeeRecap = async (params = {}) => {
 
   return {
     company: {
-      name: config.companyName || 'PT. GREATSOFT SOLUSI INDONESIA',
+      name: config.companyName || '',
       logo: config.companyLogo || null,
       title: 'LAPORAN PER PERIODE KEHADIRAN PEGAWAI',
       periodText: `${MONTH_NAMES[month - 1]} ${year}`,
@@ -346,7 +317,6 @@ const getEmployeeRecap = async (params = {}) => {
       nip: person.nip || '-',
       department: person.departmentName || '-',
       position: person.positionName || '-',
-      unitKerja: person.positionName || person.departmentName || '-',
       institution: person.institutionName || '-',
     },
     summary: {
