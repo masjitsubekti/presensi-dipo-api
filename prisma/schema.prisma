@@ -102,6 +102,7 @@ model AppConfig {
   allowHolidayAttendance Boolean   @default(true) @map("allow_holiday_attendance")
   saveAttendancePhoto    Boolean   @default(true) @map("save_attendance_photo")
   requireAttendancePhoto Boolean   @default(true) @map("require_attendance_photo")
+  storageDriver          String?   @default("local") @map("storage_driver") @db.VarChar(20)
   updated_by             String?   @db.Char(36)
   createdAt              DateTime? @map("created_at") @db.Timestamp(0)
   updatedAt              DateTime? @updatedAt @map("updated_at") @db.Timestamp(0)

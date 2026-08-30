@@ -317,7 +317,7 @@ const checkIn = async (userId, { photoBuffer, photoMimeType, latitude, longitude
 
     // Save photo to storage (if storage saving is enabled) & log re-checkin
     const photoPath = (photoBuffer && config.saveAttendancePhoto)
-      ? await storage.save(photoBuffer, photoMimeType, 'attendance/checkin')
+      ? await storage.uploadFile(photoBuffer, photoMimeType, 'attendance/checkin', 'checkin')
       : null;
 
     await insertLog({
@@ -397,7 +397,7 @@ const checkIn = async (userId, { photoBuffer, photoMimeType, latitude, longitude
 
   // 6. Save photo (if photo saving to storage is enabled)
   const photoPath = (photoBuffer && config.saveAttendancePhoto)
-    ? await storage.save(photoBuffer, photoMimeType, 'attendance/checkin')
+    ? await storage.uploadFile(photoBuffer, photoMimeType, 'attendance/checkin', 'checkin')
     : null;
 
   // 7. Transaction: insert log + create/update attendance
@@ -562,7 +562,7 @@ const checkOut = async (userId, { photoBuffer, photoMimeType, latitude, longitud
 
   // 6. Save photo (if photo saving to storage is enabled)
   const photoPath = (photoBuffer && config.saveAttendancePhoto)
-    ? await storage.save(photoBuffer, photoMimeType, 'attendance/checkout')
+    ? await storage.uploadFile(photoBuffer, photoMimeType, 'attendance/checkout', 'checkout')
     : null;
 
   // 7. Transaction: insert log + update attendance

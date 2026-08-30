@@ -5,7 +5,7 @@ const attendanceRequestService = require('../services/attendance-request.service
 const response = require('../helpers/response.helper');
 const storage = require('../storage/storage.service');
 
-const requestUpload = createUpload({ maxSizeMb: 5 });
+const requestUpload = createUpload({ maxSizeMb: 1 });
 
 /** GET /v1/attendance-request */
 exports.index = async (req, res, next) => {
@@ -32,10 +32,11 @@ exports.store = [
   async (req, res, next) => {
     try {
       if (req.file) {
-        req.body.filePath = await storage.save(
+        req.body.filePath = await storage.uploadFile(
           req.file.buffer,
           req.file.mimetype,
-          'leaves',
+          'request',
+          'request',
           req.file.originalname
         );
       }
@@ -55,10 +56,11 @@ exports.update = [
   async (req, res, next) => {
     try {
       if (req.file) {
-        req.body.filePath = await storage.save(
+        req.body.filePath = await storage.uploadFile(
           req.file.buffer,
           req.file.mimetype,
-          'leaves',
+          'request',
+          'request',
           req.file.originalname
         );
       }

@@ -12,6 +12,7 @@ const masterRoutes = require('./master.routes');
 const attendanceRoutes = require('./attendance.routes');
 const attendanceRequestRoutes = require('./attendance-request.routes');
 const reportRoutes = require('./report.routes');
+const fileRoutes = require('./file.routes');
 
 // ==================== Health ====================
 router.use('/health', healthRoutes);
@@ -36,7 +37,8 @@ router.use('/master', masterRoutes);
 router.use('/attendance', attendanceRoutes);
 router.use('/attendance-request', attendanceRequestRoutes);
 
-// ==================== Report ====================
+// ==================== Report & Files ====================
 router.use('/report', reportRoutes);
+router.use('/files', fileRoutes);
 
 module.exports = router;
