@@ -1,5 +1,14 @@
 const prisma = require('../config/prisma');
 const { formatTz } = require('../utils/timezone');
+const { paginate, parsePaginationParams } = require('../helpers/pagination.helper');
+
+const parseBoolean = (val, defaultVal = false) => {
+  if (val === null || val === undefined) return defaultVal;
+  if (typeof val === 'boolean') return val;
+  if (typeof val === 'number') return val === 1;
+  const s = String(val).trim().toLowerCase();
+  return s === 'true' || s === '1' || s === 'yes';
+};
 
 /**
  * Report Service (MySQL Raw Query)
@@ -48,7 +57,7 @@ const getEmployeeRecap = async (params = {}) => {
     LIMIT 1
   `;
   const configResult = await prisma.$queryRawUnsafe(configSql);
-  const config = configResult[0] || { companyName: 'PT. GREATSOFT SOLUSI INDONESIA' };
+  const config = configResult[0] || { companyName: '' };
 
   // Date range for selected month
   const startDateStr = `${year}-${String(month).padStart(2, '0')}-01`;
@@ -337,4 +346,256 @@ const getEmployeeRecap = async (params = {}) => {
   };
 };
 
-module.exports = { getEmployeeRecap };
+const getEmployeeSummary = async (params = {}) => {
+  const { pageNumber, pageSize, skip } = parsePaginationParams(params);
+  const ignorePaging = parseBoolean(params.ignorePaging, false);
+  const keyword = params.q ?? null;
+
+  const now = new Date();
+  let startDateStr = '';
+  let endDateStr = '';
+  let periodText = '';
+
+  if (params.startDate && params.endDate) {
+    startDateStr = params.startDate;
+    endDateStr = params.endDate;
+    periodText = `${formatDateDDMMYYYY(new Date(startDateStr))} s/d ${formatDateDDMMYYYY(new Date(endDateStr))}`;
+  } else {
+    const year = Number(params.year || now.getFullYear());
+    const month = Number(params.month || (now.getMonth() + 1));
+    if (month < 1 || month > 12) throw { status: 400, message: 'Bulan tidak valid (1-12)' };
+
+    startDateStr = `${year}-${String(month).padStart(2, '0')}-01`;
+    const lastDay = new Date(year, month, 0).getDate();
+    endDateStr = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+    periodText = `${MONTH_NAMES[month - 1]} ${year}`;
+  }
+
+  // Bindings for CTE dates
+  const cteParams = [startDateStr, endDateStr];
+
+  // Where clauses & bindings for m_person
+  let whereClauses = ['p.is_deleted = 0'];
+  let whereParams = [];
+
+  const institutionId = params.institutionId || params.institution_id;
+  if (institutionId) {
+    whereClauses.push('p.institution_id = ?');
+    whereParams.push(Number(institutionId));
+  }
+
+  const departmentId = params.departmentId || params.department_id;
+  if (departmentId) {
+    whereClauses.push('p.department_id = ?');
+    whereParams.push(Number(departmentId));
+  }
+
+  if (keyword) {
+    whereClauses.push("CONCAT(IFNULL(p.name, ''), IFNULL(p.nip, ''), IFNULL(dept.name, ''), IFNULL(pos.name, ''), IFNULL(i.name, '')) LIKE ?");
+    whereParams.push(`%${keyword}%`);
+  }
+
+  const ALLOWED_SORT_COLUMNS = {
+    nip: 'nip',
+    name: 'name',
+    institutionName: 'institutionName',
+    departmentName: 'departmentName',
+    positionName: 'positionName',
+    countHadir: 'countHadir',
+    countTerlambat: 'countTerlambat',
+    totalLateMinutes: 'totalLateMinutes',
+    countPulangCepat: 'countPulangCepat',
+    totalEarlyLeaveMinutes: 'totalEarlyLeaveMinutes',
+    countIzin: 'countIzin',
+    countCuti: 'countCuti',
+    countSakit: 'countSakit',
+    countDinas: 'countDinas',
+    countMangkir: 'countMangkir',
+    countAlpha: 'countAlpha',
+    countLibur: 'countLibur',
+  };
+
+  const rawSortBy = params.sortBy || params.sort_by;
+  const sortBy = ALLOWED_SORT_COLUMNS[rawSortBy] || 'name';
+  const sortType = (params.sortType || params.sort_type || 'ASC').toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
+
+  const sqlBindings = [...cteParams, ...whereParams];
+
+  const fullCteQuery = `
+    WITH RECURSIVE dates AS (
+      SELECT CAST(? AS DATE) AS d
+      UNION ALL
+      SELECT DATE_ADD(d, INTERVAL 1 DAY)
+      FROM dates
+      WHERE d < CAST(? AS DATE)
+    ),
+    person_summary AS (
+      SELECT 
+        p.id AS personId,
+        p.nip,
+        p.name,
+        i.name AS institutionName,
+        dept.name AS departmentName,
+        pos.name AS positionName,
+        
+        CAST(SUM(CASE WHEN a.checkin_time IS NOT NULL AND a.checkout_time IS NOT NULL THEN 1 ELSE 0 END) AS SIGNED) AS countHadir,
+        CAST(SUM(CASE WHEN a.checkin_time IS NOT NULL AND a.checkout_time IS NOT NULL AND IFNULL(a.late_minutes, 0) > 0 THEN 1 ELSE 0 END) AS SIGNED) AS countTerlambat,
+        CAST(SUM(CASE WHEN a.checkin_time IS NOT NULL AND a.checkout_time IS NOT NULL THEN IFNULL(a.late_minutes, 0) ELSE 0 END) AS SIGNED) AS totalLateMinutes,
+        CAST(SUM(CASE WHEN a.checkin_time IS NOT NULL AND a.checkout_time IS NOT NULL AND IFNULL(a.early_leave_minutes, 0) > 0 THEN 1 ELSE 0 END) AS SIGNED) AS countPulangCepat,
+        CAST(SUM(CASE WHEN a.checkin_time IS NOT NULL AND a.checkout_time IS NOT NULL THEN IFNULL(a.early_leave_minutes, 0) ELSE 0 END) AS SIGNED) AS totalEarlyLeaveMinutes,
+        CAST(SUM(CASE WHEN a.id IS NULL AND ar.id IS NOT NULL AND (UPPER(at.code) = 'SK' OR UPPER(at.name) LIKE '%SAKIT%') THEN 1 ELSE 0 END) AS SIGNED) AS countSakit,
+        CAST(SUM(CASE WHEN a.id IS NULL AND ar.id IS NOT NULL AND (UPPER(at.code) IN ('DLK','DDS','DDK') OR UPPER(at.category) LIKE '%DINAS%' OR UPPER(at.name) LIKE '%DINAS%') THEN 1 ELSE 0 END) AS SIGNED) AS countDinas,
+        CAST(SUM(CASE WHEN a.id IS NULL AND ar.id IS NOT NULL AND (UPPER(at.code) LIKE '%CT%' OR UPPER(at.name) LIKE '%CUTI%') THEN 1 ELSE 0 END) AS SIGNED) AS countCuti,
+        CAST(SUM(CASE WHEN a.id IS NULL AND ar.id IS NOT NULL AND NOT (UPPER(at.code) = 'SK' OR UPPER(at.name) LIKE '%SAKIT%') AND NOT (UPPER(at.code) IN ('DLK','DDS','DDK') OR UPPER(at.category) LIKE '%DINAS%' OR UPPER(at.name) LIKE '%DINAS%') AND NOT (UPPER(at.code) LIKE '%CT%' OR UPPER(at.name) LIKE '%CUTI%') AND NOT (UPPER(at.code) IN ('LBN','LIBUR') OR UPPER(at.name) LIKE '%LIBUR%') THEN 1 ELSE 0 END) AS SIGNED) AS countIzin,
+        CAST(SUM(CASE WHEN h.id IS NOT NULL OR DAYOFWEEK(d.d) IN (1, 7) OR (a.id IS NULL AND ar.id IS NOT NULL AND (UPPER(at.code) IN ('LBN','LIBUR') OR UPPER(at.name) LIKE '%LIBUR%')) THEN 1 ELSE 0 END) AS SIGNED) AS countLibur,
+        CAST(SUM(CASE WHEN (a.checkin_time IS NOT NULL AND a.checkout_time IS NULL) OR (a.checkin_time IS NULL AND a.checkout_time IS NOT NULL) THEN 1 ELSE 0 END) AS SIGNED) AS countMangkir,
+        CAST(SUM(CASE WHEN a.id IS NULL AND ar.id IS NULL AND h.id IS NULL AND DAYOFWEEK(d.d) NOT IN (1, 7) AND d.d <= CURRENT_DATE() THEN 1 ELSE 0 END) AS SIGNED) AS countAlpha
+      FROM dates d
+      CROSS JOIN m_person p
+      LEFT JOIN m_institution i ON p.institution_id = i.id
+      LEFT JOIN m_department dept ON p.department_id = dept.id
+      LEFT JOIN m_position pos ON p.position_id = pos.id
+      LEFT JOIN attendances a ON p.id = a.person_id AND a.attendance_date = d.d AND a.is_deleted = 0
+      LEFT JOIN attendance_requests ar ON p.id = ar.person_id AND ar.status = 'approved' AND ar.is_deleted = 0 AND d.d >= ar.start_date AND d.d <= ar.end_date
+      LEFT JOIN m_attendance_type at ON ar.attendance_type_id = at.id
+      LEFT JOIN m_holiday h ON h.date = d.d AND h.is_deleted = 0 AND (h.institution_id IS NULL OR h.institution_id = p.institution_id)
+      WHERE ${whereClauses.join(' AND ')}
+      GROUP BY p.id, p.nip, p.name, i.name, dept.name, pos.name
+    )
+  `;
+
+  // Exec Total Summary Query
+  const totalSummarySql = `
+    ${fullCteQuery}
+    SELECT 
+      COUNT(*) AS totalEmployee,
+      CAST(IFNULL(SUM(countHadir), 0) AS SIGNED) AS totalHadir,
+      CAST(IFNULL(SUM(countTerlambat), 0) AS SIGNED) AS totalTerlambat,
+      CAST(IFNULL(SUM(totalLateMinutes), 0) AS SIGNED) AS totalLateMinutes,
+      CAST(IFNULL(SUM(countPulangCepat), 0) AS SIGNED) AS totalPulangCepat,
+      CAST(IFNULL(SUM(totalEarlyLeaveMinutes), 0) AS SIGNED) AS totalEarlyLeaveMinutes,
+      CAST(IFNULL(SUM(countIzin), 0) AS SIGNED) AS totalIzin,
+      CAST(IFNULL(SUM(countCuti), 0) AS SIGNED) AS totalCuti,
+      CAST(IFNULL(SUM(countSakit), 0) AS SIGNED) AS totalSakit,
+      CAST(IFNULL(SUM(countDinas), 0) AS SIGNED) AS totalDinas,
+      CAST(IFNULL(SUM(countMangkir), 0) AS SIGNED) AS totalMangkir,
+      CAST(IFNULL(SUM(countAlpha), 0) AS SIGNED) AS totalAlpha,
+      CAST(IFNULL(SUM(countLibur), 0) AS SIGNED) AS totalLibur
+    FROM person_summary
+  `;
+  const totalSummaryRows = await prisma.$queryRawUnsafe(totalSummarySql, ...sqlBindings);
+  const summaryRow = totalSummaryRows[0] || {};
+  const total = Number(summaryRow.totalEmployee || 0);
+
+  if (total === 0) {
+    const paginationResult = paginate([], 0, pageNumber, pageSize);
+    return {
+      periodText,
+      startDate: startDateStr,
+      endDate: endDateStr,
+      summary: {
+        totalEmployee: 0,
+        totalHadir: 0,
+        totalTerlambat: 0,
+        totalLateMinutes: 0,
+        totalLateHours: 0,
+        totalLateRemainingMinutes: 0,
+        totalPulangCepat: 0,
+        totalEarlyLeaveMinutes: 0,
+        totalEarlyLeaveHours: 0,
+        totalEarlyLeaveRemainingMinutes: 0,
+        totalIzin: 0,
+        totalCuti: 0,
+        totalSakit: 0,
+        totalDinas: 0,
+        totalMangkir: 0,
+        totalAlpha: 0,
+        totalLibur: 0,
+      },
+      ...paginationResult,
+    };
+  }
+
+  // Exec Data Query with ORDER BY and LIMIT/OFFSET
+  let dataSql = `
+    ${fullCteQuery}
+    SELECT * FROM person_summary
+    ORDER BY ${sortBy} ${sortType}
+  `;
+
+  let rows;
+  if (ignorePaging) {
+    rows = await prisma.$queryRawUnsafe(dataSql, ...sqlBindings);
+  } else {
+    dataSql += ` LIMIT ? OFFSET ?`;
+    rows = await prisma.$queryRawUnsafe(dataSql, ...sqlBindings, pageSize, skip);
+  }
+
+  const items = (rows || []).map((row) => {
+    const lateMins = Number(row.totalLateMinutes || 0);
+    const earlyMins = Number(row.totalEarlyLeaveMinutes || 0);
+    return {
+      personId: Number(row.personId),
+      nip: row.nip || '-',
+      name: row.name,
+      institutionName: row.institutionName || '-',
+      departmentName: row.departmentName || '-',
+      positionName: row.positionName || '-',
+      countHadir: Number(row.countHadir || 0),
+      countTerlambat: Number(row.countTerlambat || 0),
+      totalLateMinutes: lateMins,
+      totalLateHours: Math.floor(lateMins / 60),
+      totalLateRemainingMinutes: lateMins % 60,
+      countPulangCepat: Number(row.countPulangCepat || 0),
+      totalEarlyLeaveMinutes: earlyMins,
+      totalEarlyLeaveHours: Math.floor(earlyMins / 60),
+      totalEarlyLeaveRemainingMinutes: earlyMins % 60,
+      countIzin: Number(row.countIzin || 0),
+      countCuti: Number(row.countCuti || 0),
+      countSakit: Number(row.countSakit || 0),
+      countDinas: Number(row.countDinas || 0),
+      countMangkir: Number(row.countMangkir || 0),
+      countAlpha: Number(row.countAlpha || 0),
+      countLibur: Number(row.countLibur || 0),
+    };
+  });
+
+  const sumLateMinutes = Number(summaryRow.totalLateMinutes || 0);
+  const sumEarlyLeaveMinutes = Number(summaryRow.totalEarlyLeaveMinutes || 0);
+
+  const totalSummary = {
+    totalEmployee: total,
+    totalHadir: Number(summaryRow.totalHadir || 0),
+    totalTerlambat: Number(summaryRow.totalTerlambat || 0),
+    totalLateMinutes: sumLateMinutes,
+    totalLateHours: Math.floor(sumLateMinutes / 60),
+    totalLateRemainingMinutes: sumLateMinutes % 60,
+    totalPulangCepat: Number(summaryRow.totalPulangCepat || 0),
+    totalEarlyLeaveMinutes: sumEarlyLeaveMinutes,
+    totalEarlyLeaveHours: Math.floor(sumEarlyLeaveMinutes / 60),
+    totalEarlyLeaveRemainingMinutes: sumEarlyLeaveMinutes % 60,
+    totalIzin: Number(summaryRow.totalIzin || 0),
+    totalCuti: Number(summaryRow.totalCuti || 0),
+    totalSakit: Number(summaryRow.totalSakit || 0),
+    totalDinas: Number(summaryRow.totalDinas || 0),
+    totalMangkir: Number(summaryRow.totalMangkir || 0),
+    totalAlpha: Number(summaryRow.totalAlpha || 0),
+    totalLibur: Number(summaryRow.totalLibur || 0),
+  };
+
+  return {
+    periodText,
+    startDate: startDateStr,
+    endDate: endDateStr,
+    summary: totalSummary,
+    ...paginate(
+      items,
+      total,
+      pageNumber,
+      ignorePaging ? (total || 1) : pageSize
+    ),
+  };
+};
+
+module.exports = { getEmployeeRecap, getEmployeeSummary };
+

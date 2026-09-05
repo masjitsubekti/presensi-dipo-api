@@ -33,6 +33,21 @@ const getEmployeeRecap = async (req, res, next) => {
   }
 };
 
+const getEmployeeSummary = async (req, res, next) => {
+  try {
+    const data = await reportService.getEmployeeSummary(req.query);
+
+    return res.status(200).json({
+      status: true,
+      message: 'Berhasil mengambil data Rekapitulasi Presensi Pegawai',
+      data,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getEmployeeRecap,
+  getEmployeeSummary,
 };
