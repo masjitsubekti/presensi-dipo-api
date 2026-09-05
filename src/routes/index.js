@@ -12,6 +12,7 @@ const masterRoutes = require('./master.routes');
 const attendanceRoutes = require('./attendance.routes');
 const attendanceRequestRoutes = require('./attendance-request.routes');
 const reportRoutes = require('./report.routes');
+const dashboardRoutes = require('./dashboard.routes');
 const fileRoutes = require('./file.routes');
 
 // ==================== Health ====================
@@ -37,7 +38,8 @@ router.use('/master', masterRoutes);
 router.use('/attendance', attendanceRoutes);
 router.use('/attendance-request', attendanceRequestRoutes);
 
-// ==================== Report & Files ====================
+// ==================== Dashboard, Report & Files ====================
+router.use('/dashboard', dashboardRoutes);
 router.use('/report', reportRoutes);
 router.use('/files', fileRoutes);
 
