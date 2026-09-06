@@ -173,12 +173,16 @@ const fetchSummaryMetrics = async (prisma, { todayStr, endDateStr, institutionId
       const late = Number(att.lateMinutes || 0);
       const early = Number(att.earlyLeaveMinutes || 0);
 
+      // Tepat waktu: Wajib ada Jam Masuk & Jam Pulang, late <= 0, early <= 0, dan bukan Mangkir
+      const isOnTime = hasCheckin && hasCheckout && late <= 0 && early <= 0 && !isMangkir;
+      if (isOnTime) {
+        onTimeCount++;
+      }
+
       if (late > 0) {
         lateCount++;
         totalLateMinutes += late;
         if (late > 30) severeLateCount++;
-      } else if (!isMangkir) {
-        onTimeCount++;
       }
 
       if (early > 0) {
@@ -203,6 +207,8 @@ const fetchSummaryMetrics = async (prisma, { todayStr, endDateStr, institutionId
           code === 'CTH' || 
           code === 'CM' || 
           code === 'CBR' || 
+          cat === 'TIME_OFF' ||
+          cat.includes('TIME_OFF') ||
           code.includes('CUTI') || 
           name.includes('CUTI') || 
           cat.includes('CUTI')
@@ -210,6 +216,8 @@ const fetchSummaryMetrics = async (prisma, { todayStr, endDateStr, institutionId
           leaveCount++;
         } else if (
           code === 'DL' || 
+          cat === 'DUTY' ||
+          cat.includes('DUTY') ||
           code.includes('DINAS') || 
           name.includes('DINAS') || 
           cat.includes('DINAS')
@@ -300,10 +308,11 @@ const fetchMonthlyTrend = async (prisma, { monthStr, now, totalEmployees, instit
   const monthAttendanceSql = `
     SELECT 
       DATE_FORMAT(a.attendance_date, '%d') AS dayNum,
-      COUNT(a.id) AS totalHadir,
-      SUM(CASE WHEN a.late_minutes <= 0 AND a.checkin_time IS NOT NULL AND a.checkout_time IS NOT NULL THEN 1 ELSE 0 END) AS onTimeCount,
+      SUM(CASE WHEN a.checkin_time IS NOT NULL AND a.checkout_time IS NOT NULL AND UPPER(COALESCE(a.status, '')) != 'MANGKIR' AND UPPER(COALESCE(a.attendance_type, '')) != 'M' THEN 1 ELSE 0 END) AS totalHadir,
+      SUM(CASE WHEN a.late_minutes <= 0 AND a.early_leave_minutes <= 0 AND a.checkin_time IS NOT NULL AND a.checkout_time IS NOT NULL AND UPPER(COALESCE(a.status, '')) != 'MANGKIR' AND UPPER(COALESCE(a.attendance_type, '')) != 'M' THEN 1 ELSE 0 END) AS onTimeCount,
       SUM(CASE WHEN a.late_minutes > 0 THEN 1 ELSE 0 END) AS lateCount,
       SUM(CASE WHEN a.early_leave_minutes > 0 THEN 1 ELSE 0 END) AS earlyLeaveCount,
+      SUM(CASE WHEN (a.checkin_time IS NULL OR a.checkout_time IS NULL OR UPPER(COALESCE(a.status, '')) = 'MANGKIR' OR UPPER(COALESCE(a.attendance_type, '')) = 'M') THEN 1 ELSE 0 END) AS mangkirCount,
       SUM(a.late_minutes) AS totalLateMins
     FROM attendances a
     JOIN m_person p ON a.person_id = p.id
@@ -365,6 +374,8 @@ const fetchMonthlyTrend = async (prisma, { monthStr, now, totalEmployees, instit
     const onT = Number(row?.onTimeCount || 0);
     const lT = Number(row?.lateCount || 0);
     const eL = Number(row?.earlyLeaveCount || 0);
+    const mangkirC = Number(row?.mangkirCount || 0);
+    const totalHadirDay = Number(row?.totalHadir || 0);
     const lM = Number(row?.totalLateMins || 0);
 
     let permitC = 0;
@@ -375,7 +386,7 @@ const fetchMonthlyTrend = async (prisma, { monthStr, now, totalEmployees, instit
         const name = String(r.typeName || '').trim().toUpperCase();
         const cat = String(r.typeCategory || '').trim().toUpperCase();
 
-        if (code === 'DL' || code.includes('DINAS') || name.includes('DINAS') || cat.includes('DINAS')) {
+        if (code === 'DL' || cat === 'DUTY' || cat.includes('DUTY') || code.includes('DINAS') || name.includes('DINAS') || cat.includes('DINAS')) {
           dutyC++;
         } else {
           permitC++;
@@ -383,9 +394,8 @@ const fetchMonthlyTrend = async (prisma, { monthStr, now, totalEmployees, instit
       }
     });
 
-    const mangkirC = 0;
     const isFutureDay = dayStr > todayStrReal;
-    const alphaCount = isFutureDay ? 0 : Math.max(0, totalEmployees - (onT + lT + permitC + dutyC));
+    const alphaCount = isFutureDay ? 0 : Math.max(0, totalEmployees - (totalHadirDay + mangkirC + permitC + dutyC));
 
     dailyOnTime.push(onT);
     dailyLate.push(lT);
@@ -437,7 +447,7 @@ const fetchDepartmentSummary = async (prisma, { monthStr, now, institutionId, de
     SELECT 
       d.id, d.name,
       COUNT(DISTINCT p.id) AS totalEmployees,
-      COUNT(DISTINCT a.id) AS presentCount
+      COUNT(DISTINCT CASE WHEN a.checkin_time IS NOT NULL AND a.checkout_time IS NOT NULL AND UPPER(COALESCE(a.status, '')) != 'MANGKIR' AND UPPER(COALESCE(a.attendance_type, '')) != 'M' THEN a.id ELSE NULL END) AS presentCount
     FROM m_department d
     LEFT JOIN m_person p ON p.department_id = d.id AND p.is_deleted = 0
     LEFT JOIN attendances a ON a.person_id = p.id 

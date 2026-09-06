@@ -215,22 +215,43 @@ const getEmployeeRecap = async (params = {}) => {
       categoryClass = 'libur';
       countLibur++;
     } else if (matchedRequest) {
-      const typeCode = (matchedRequest.attendanceTypeCode || 'IZIN').toUpperCase();
-      const typeName = (matchedRequest.attendanceTypeName || '').toUpperCase();
-      const typeCategory = (matchedRequest.attendanceTypeCategory || '').toUpperCase();
+      const typeCode = (matchedRequest.attendanceTypeCode || 'IZIN').trim().toUpperCase();
+      const typeName = (matchedRequest.attendanceTypeName || '').trim().toUpperCase();
+      const typeCategory = (matchedRequest.attendanceTypeCategory || '').trim().toUpperCase();
 
-      keterangan = matchedRequest.attendanceTypeCode || 'IZIN';
-      keteranganDetail = matchedRequest.reason ? `${matchedRequest.attendanceTypeName} ( ${matchedRequest.reason} )` : matchedRequest.attendanceTypeName;
+      keteranganDetail = matchedRequest.reason 
+        ? `${matchedRequest.attendanceTypeName} ( ${matchedRequest.reason} )` 
+        : matchedRequest.attendanceTypeName;
 
       if (typeCode === 'SK' || typeName.includes('SAKIT')) {
+        keterangan = matchedRequest.attendanceTypeCode || 'SK';
         categoryClass = 'sakit';
-      } else if (['CT', 'CTH', 'CM', 'CBR'].includes(typeCode) || typeCategory.includes('CUTI') || typeName.includes('CUTI')) {
+      } else if (
+        ['CT', 'CTH', 'CM', 'CBR'].includes(typeCode) || 
+        typeCategory === 'TIME_OFF' || 
+        typeCategory.includes('TIME_OFF') || 
+        typeCategory.includes('CUTI') || 
+        typeName.includes('CUTI')
+      ) {
+        keterangan = matchedRequest.attendanceTypeCode || 'CTH';
         categoryClass = 'cuti';
-      } else if (['DL', 'DLK', 'DDS', 'DDK'].includes(typeCode) || typeCategory.includes('DINAS') || typeName.includes('DINAS')) {
+      } else if (
+        ['DL', 'DLK', 'DDS', 'DDK'].includes(typeCode) || 
+        typeCategory === 'DUTY' || 
+        typeCategory.includes('DUTY') || 
+        typeCategory.includes('DINAS') || 
+        typeName.includes('DINAS')
+      ) {
+        keterangan = matchedRequest.attendanceTypeCode || 'DL';
         categoryClass = 'dinas';
-      } else if (['LBN', 'LIBUR'].includes(typeCode) || typeName.includes('LIBUR')) {
+      } else if (typeCode === 'WFH' || typeName.includes('HOME') || typeName.includes('WFH')) {
+        keterangan = matchedRequest.attendanceTypeCode || 'WFH';
+        categoryClass = 'izin';
+      } else if (['LBN', 'LIBUR', 'LIBNAS'].includes(typeCode) || typeName.includes('LIBUR')) {
+        keterangan = matchedRequest.attendanceTypeCode || 'LBN';
         categoryClass = 'libur';
       } else {
+        keterangan = matchedRequest.attendanceTypeCode || 'I';
         categoryClass = 'izin';
       }
       countIzinCuti++;
@@ -240,13 +261,24 @@ const getEmployeeRecap = async (params = {}) => {
     } else {
       const hasCheckin = Boolean(attendance && (attendance.checkinTimeStr || attendance.checkinTime));
       const hasCheckout = Boolean(attendance && (attendance.checkoutTimeStr || attendance.checkoutTime));
+      const attTypeUpper = String(attendance?.attendanceType || '').trim().toUpperCase();
+      const attStatusUpper = String(attendance?.status || '').trim().toUpperCase();
 
       if (hasCheckin && hasCheckout) {
         // Both Check-in and Check-out present -> Hadir
         regularMasuk = attendance.checkinTimeStr || formatTime(attendance.checkinTime) || '-';
         regularPulang = attendance.checkoutTimeStr || formatTime(attendance.checkoutTime) || '-';
-        keterangan = 'H';
-        categoryClass = 'hadir';
+
+        if (attTypeUpper === 'DL' || attStatusUpper.includes('DINAS')) {
+          keterangan = 'DL';
+          categoryClass = 'dinas';
+        } else if (attTypeUpper === 'WFH' || attStatusUpper.includes('WFH')) {
+          keterangan = 'WFH';
+          categoryClass = 'izin';
+        } else {
+          keterangan = 'H';
+          categoryClass = 'hadir';
+        }
         countHadir++;
 
         const lateMins = Number(attendance.lateMinutes || 0);
@@ -446,9 +478,9 @@ const getEmployeeSummary = async (params = {}) => {
         CAST(SUM(CASE WHEN a.checkin_time IS NOT NULL AND a.checkout_time IS NOT NULL AND IFNULL(a.early_leave_minutes, 0) > 0 THEN 1 ELSE 0 END) AS SIGNED) AS countPulangCepat,
         CAST(SUM(CASE WHEN a.checkin_time IS NOT NULL AND a.checkout_time IS NOT NULL THEN IFNULL(a.early_leave_minutes, 0) ELSE 0 END) AS SIGNED) AS totalEarlyLeaveMinutes,
         CAST(SUM(CASE WHEN a.id IS NULL AND ar.id IS NOT NULL AND (UPPER(at.code) = 'SK' OR UPPER(at.name) LIKE '%SAKIT%') THEN 1 ELSE 0 END) AS SIGNED) AS countSakit,
-        CAST(SUM(CASE WHEN a.id IS NULL AND ar.id IS NOT NULL AND (UPPER(at.code) IN ('DLK','DDS','DDK') OR UPPER(at.category) LIKE '%DINAS%' OR UPPER(at.name) LIKE '%DINAS%') THEN 1 ELSE 0 END) AS SIGNED) AS countDinas,
-        CAST(SUM(CASE WHEN a.id IS NULL AND ar.id IS NOT NULL AND (UPPER(at.code) LIKE '%CT%' OR UPPER(at.name) LIKE '%CUTI%') THEN 1 ELSE 0 END) AS SIGNED) AS countCuti,
-        CAST(SUM(CASE WHEN a.id IS NULL AND ar.id IS NOT NULL AND NOT (UPPER(at.code) = 'SK' OR UPPER(at.name) LIKE '%SAKIT%') AND NOT (UPPER(at.code) IN ('DLK','DDS','DDK') OR UPPER(at.category) LIKE '%DINAS%' OR UPPER(at.name) LIKE '%DINAS%') AND NOT (UPPER(at.code) LIKE '%CT%' OR UPPER(at.name) LIKE '%CUTI%') AND NOT (UPPER(at.code) IN ('LBN','LIBUR') OR UPPER(at.name) LIKE '%LIBUR%') THEN 1 ELSE 0 END) AS SIGNED) AS countIzin,
+        CAST(SUM(CASE WHEN a.id IS NULL AND ar.id IS NOT NULL AND (UPPER(at.code) IN ('DL','DLK','DDS','DDK') OR UPPER(at.category) = 'DUTY' OR UPPER(at.category) LIKE '%DINAS%' OR UPPER(at.name) LIKE '%DINAS%') THEN 1 ELSE 0 END) AS SIGNED) AS countDinas,
+        CAST(SUM(CASE WHEN a.id IS NULL AND ar.id IS NOT NULL AND (UPPER(at.code) IN ('CT','CTH','CM','CBR') OR UPPER(at.category) = 'TIME_OFF' OR UPPER(at.category) LIKE '%CUTI%' OR UPPER(at.name) LIKE '%CUTI%') THEN 1 ELSE 0 END) AS SIGNED) AS countCuti,
+        CAST(SUM(CASE WHEN a.id IS NULL AND ar.id IS NOT NULL AND NOT (UPPER(at.code) = 'SK' OR UPPER(at.name) LIKE '%SAKIT%') AND NOT (UPPER(at.code) IN ('DL','DLK','DDS','DDK') OR UPPER(at.category) = 'DUTY' OR UPPER(at.category) LIKE '%DINAS%' OR UPPER(at.name) LIKE '%DINAS%') AND NOT (UPPER(at.code) IN ('CT','CTH','CM','CBR') OR UPPER(at.category) = 'TIME_OFF' OR UPPER(at.category) LIKE '%CUTI%' OR UPPER(at.name) LIKE '%CUTI%') AND NOT (UPPER(at.code) IN ('LBN','LIBUR') OR UPPER(at.name) LIKE '%LIBUR%') THEN 1 ELSE 0 END) AS SIGNED) AS countIzin,
         CAST(SUM(CASE WHEN h.id IS NOT NULL OR DAYOFWEEK(d.d) IN (1, 7) OR (a.id IS NULL AND ar.id IS NOT NULL AND (UPPER(at.code) IN ('LBN','LIBUR') OR UPPER(at.name) LIKE '%LIBUR%')) THEN 1 ELSE 0 END) AS SIGNED) AS countLibur,
         CAST(SUM(CASE WHEN (a.checkin_time IS NOT NULL AND a.checkout_time IS NULL) OR (a.checkin_time IS NULL AND a.checkout_time IS NOT NULL) THEN 1 ELSE 0 END) AS SIGNED) AS countMangkir,
         CAST(SUM(CASE WHEN a.id IS NULL AND ar.id IS NULL AND h.id IS NULL AND DAYOFWEEK(d.d) NOT IN (1, 7) AND d.d <= CURRENT_DATE() THEN 1 ELSE 0 END) AS SIGNED) AS countAlpha

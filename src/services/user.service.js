@@ -262,6 +262,109 @@ const updateFcmToken = async (id, device, fcmToken) => {
   return resolveById(id);
 };
 
+const getProfile = async (id) => {
+  const userSql = `
+    SELECT 
+      u.id, 
+      u.name, 
+      u.username, 
+      u.email, 
+      u.foto, 
+      u.status,
+      u.person_id AS personId, 
+      p.nip,
+      p.status AS personStatus,
+      dept.name AS departmentName,
+      i.name AS institutionName,
+      pos.name AS positionName,
+      r.name AS roleName
+    FROM auth_user u
+    LEFT JOIN auth_role r ON u.role_id = r.id
+    LEFT JOIN m_person p ON u.person_id = p.id
+    LEFT JOIN m_institution i ON u.institution_id = i.id
+    LEFT JOIN m_department dept ON p.department_id = dept.id
+    LEFT JOIN m_position pos ON p.position_id = pos.id
+    WHERE u.id = ? AND u.is_deleted = 0
+  `;
+  const rows = await prisma.$queryRawUnsafe(userSql, String(id));
+  if (!rows || !rows.length) {
+    throw { status: 404, message: 'User tidak ditemukan' };
+  }
+  const item = rows[0];
+  return {
+    ...item,
+    personId: item.personId ? Number(item.personId) : null,
+  };
+};
+
+const updateProfile = async (id, data, currentUser = null) => {
+  const user = await resolveById(id);
+
+  const updateData = {
+    name: data.name,
+    username: data.username,
+    email: data.email ?? null,
+    updatedAt: new Date(),
+    updatedBy: currentUser?.id ?? null,
+  };
+
+  await prisma.authUser.update({
+    where: { id: String(id) },
+    data: updateData,
+  });
+
+  if (user.personId) {
+    await prisma.mPerson.update({
+      where: { id: Number(user.personId) },
+      data: {
+        name: data.name,
+        email: data.email ?? null,
+        updatedAt: new Date(),
+        updatedBy: currentUser?.id ?? null,
+      },
+    }).catch(() => {});
+  }
+
+  return getProfile(id);
+};
+
+const storageService = require('../storage/storage.service');
+
+const updatePhoto = async (file, userId, currentUser = null) => {
+  if (!file) throw { status: 400, message: 'File foto wajib diunggah' };
+  const user = await resolveById(userId);
+
+  const photoPath = await storageService.uploadFile(
+    file.buffer,
+    file.mimetype,
+    'user',
+    'user',
+    file.originalname
+  );
+
+  await prisma.authUser.update({
+    where: { id: String(userId) },
+    data: {
+      foto: photoPath,
+      updatedAt: new Date(),
+      updatedBy: currentUser?.id ?? null,
+    },
+  });
+
+  if (user.personId) {
+    await prisma.mPerson.update({
+      where: { id: Number(user.personId) },
+      data: {
+        photo: photoPath,
+        updatedAt: new Date(),
+        updatedBy: currentUser?.id ?? null,
+      },
+    }).catch(() => {});
+  }
+
+  return getProfile(userId);
+};
+
 module.exports = {
   resolveAll,
   getAll,
@@ -272,4 +375,7 @@ module.exports = {
   remove,
   updateActiveStatus,
   updateFcmToken,
+  getProfile,
+  updateProfile,
+  updatePhoto,
 };

@@ -25,16 +25,16 @@ const login = async (username, password) => {
   });
 
   if (!user) {
-    throw { status: 401, message: 'Username atau password yang Anda masukkan salah. Silakan coba lagi.' };
+    throw { status: 500, message: 'Username atau password yang Anda masukkan salah. Silakan coba lagi.' };
   }
 
   const isPasswordValid = await bcrypt.compare(password, user.password);
   if (!isPasswordValid) {
-    throw { status: 401, message: 'Username atau password yang Anda masukkan salah. Silakan coba lagi.' };
+    throw { status: 500, message: 'Username atau password yang Anda masukkan salah. Silakan coba lagi.' };
   }
 
   if (!user.active) {
-    throw { status: 403, message: 'Akun Anda tidak aktif. Hubungi administrator.' };
+    throw { status: 500, message: 'Akun Anda tidak aktif. Hubungi administrator.' };
   }
 
   const payload = {

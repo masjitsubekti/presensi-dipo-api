@@ -114,3 +114,45 @@ exports.updateFcmToken = async (req, res, next) => {
     next(err);
   }
 };
+
+/** GET /v1/user/profile/:id */
+exports.getProfile = async (req, res, next) => {
+  try {
+    const userId = req.params.id || req.user?.id;
+    const data = await userService.getProfile(userId);
+    return response.success(res, data);
+  } catch (err) {
+    if (err.status) return response.error(res, err.message, err.status);
+    next(err);
+  }
+};
+
+/** PUT /v1/user/profile/:id */
+exports.updateProfile = async (req, res, next) => {
+  try {
+    await validateRequest(req, [
+      body('name').notEmpty().withMessage('Nama wajib diisi').isLength({ min: 3 }),
+      body('username').notEmpty().withMessage('Username wajib diisi').isLength({ min: 3 }),
+      body('email').notEmpty().withMessage('Email wajib diisi').isEmail().withMessage('Format email tidak valid'),
+    ]);
+
+    const userId = req.params.id || req.user?.id;
+    const data = await userService.updateProfile(userId, req.body, req.user);
+    return response.success(res, data, 'Profil berhasil diperbarui');
+  } catch (err) {
+    if (err.status) return response.error(res, err.message, err.status, err.errors);
+    next(err);
+  }
+};
+
+/** POST /v1/user/update-foto */
+exports.updatePhoto = async (req, res, next) => {
+  try {
+    const userId = req.body.id || req.user?.id;
+    const data = await userService.updatePhoto(req.file, userId, req.user);
+    return response.success(res, data, 'Foto profil berhasil diperbarui');
+  } catch (err) {
+    if (err.status) return response.error(res, err.message, err.status, err.errors);
+    next(err);
+  }
+};
