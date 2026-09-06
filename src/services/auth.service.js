@@ -37,6 +37,25 @@ const login = async (username, password) => {
     throw { status: 500, message: 'Akun Anda tidak aktif. Hubungi administrator.' };
   }
 
+  let personInfo = null;
+  if (user.personId) {
+    personInfo = await prisma.mPerson.findFirst({
+      where: { id: Number(user.personId), isDeleted: false },
+      include: { institution: true, department: true, position: true },
+    });
+  }
+
+  let institutionInfo = null;
+  if (user.institutionId && !personInfo?.institution) {
+    institutionInfo = await prisma.mInstitution.findFirst({
+      where: { id: Number(user.institutionId), isDeleted: false },
+    });
+  }
+
+  const institutionName = personInfo?.institution?.name || institutionInfo?.name || null;
+  const departmentName = personInfo?.department?.name || null;
+  const positionName = personInfo?.position?.name || null;
+
   const payload = {
     id: user.id,
     username: user.username,
@@ -58,9 +77,12 @@ const login = async (username, password) => {
       email: user.email,
       status: user.status,
       roleId: user.roleId,
-      personId: user.personId,
-      organizationId: user.organizationId,
-      institutionId: user.institutionId,
+      personId: user.personId ? Number(user.personId) : null,
+      organizationId: user.organizationId ? Number(user.organizationId) : null,
+      institutionId: user.institutionId ? Number(user.institutionId) : null,
+      institutionName,
+      departmentName,
+      positionName,
       foto: user.foto,
       active: user.active,
       role: user.role
@@ -89,6 +111,25 @@ const me = async (userId) => {
     throw { status: 404, message: 'User tidak ditemukan' };
   }
 
+  let personInfo = null;
+  if (user.personId) {
+    personInfo = await prisma.mPerson.findFirst({
+      where: { id: Number(user.personId), isDeleted: false },
+      include: { institution: true, department: true, position: true },
+    });
+  }
+
+  let institutionInfo = null;
+  if (user.institutionId && !personInfo?.institution) {
+    institutionInfo = await prisma.mInstitution.findFirst({
+      where: { id: Number(user.institutionId), isDeleted: false },
+    });
+  }
+
+  const institutionName = personInfo?.institution?.name || institutionInfo?.name || null;
+  const departmentName = personInfo?.department?.name || null;
+  const positionName = personInfo?.position?.name || null;
+
   return {
     id: user.id,
     name: user.name,
@@ -96,9 +137,12 @@ const me = async (userId) => {
     email: user.email ?? '',
     status: user.status,
     roleId: user.roleId,
-    personId: user.personId,
-    organizationId: user.organizationId,
-    institutionId: user.institutionId,
+    personId: user.personId ? Number(user.personId) : null,
+    organizationId: user.organizationId ? Number(user.organizationId) : null,
+    institutionId: user.institutionId ? Number(user.institutionId) : null,
+    institutionName,
+    departmentName,
+    positionName,
     roleName: user.role?.name ?? null,
     foto: user.foto,
     active: user.active,
