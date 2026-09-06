@@ -224,7 +224,9 @@ const getEmployeeRecap = async (params = {}) => {
 
       if (typeCode === 'SK' || typeName.includes('SAKIT')) {
         categoryClass = 'sakit';
-      } else if (['DLK', 'DDS', 'DDK'].includes(typeCode) || typeCategory.includes('DINAS') || typeName.includes('DINAS')) {
+      } else if (['CT', 'CTH', 'CM', 'CBR'].includes(typeCode) || typeCategory.includes('CUTI') || typeName.includes('CUTI')) {
+        categoryClass = 'cuti';
+      } else if (['DL', 'DLK', 'DDS', 'DDK'].includes(typeCode) || typeCategory.includes('DINAS') || typeName.includes('DINAS')) {
         categoryClass = 'dinas';
       } else if (['LBN', 'LIBUR'].includes(typeCode) || typeName.includes('LIBUR')) {
         categoryClass = 'libur';

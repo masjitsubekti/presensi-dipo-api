@@ -1,5 +1,13 @@
 const prisma = require('../config/prisma');
 
+const getTodayStrReal = () => {
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+};
+
 /**
  * Helper: Fetch KPI Summary Metrics
  */
@@ -21,8 +29,39 @@ const fetchSummaryMetrics = async (prisma, { todayStr, endDateStr, institutionId
   );
   const totalEmployees = Number(totalEmployeesResult[0]?.total || 0);
 
+  // Realtime current date string
+  const todayStrReal = getTodayStrReal();
+
+  // Generate array of date strings for the range [todayStr, endDateStr]
+  const dateList = [];
+  const [y1, m1, d1] = (todayStr || '').split('-').map(Number);
+  const [y2, m2, d2] = (endDateStr || todayStr).split('-').map(Number);
+
+  if (y1 && m1 && d1 && y2 && m2 && d2) {
+    const start = new Date(Date.UTC(y1, m1 - 1, d1));
+    const end = new Date(Date.UTC(y2, m2 - 1, d2));
+    let curr = new Date(start);
+    while (curr <= end) {
+      const yyyy = curr.getUTCFullYear();
+      const mm = String(curr.getUTCMonth() + 1).padStart(2, '0');
+      const dd = String(curr.getUTCDate()).padStart(2, '0');
+      dateList.push(`${yyyy}-${mm}-${dd}`);
+      curr.setUTCDate(curr.getUTCDate() + 1);
+    }
+  }
+
+  if (dateList.length === 0) {
+    dateList.push(todayStr);
+  }
+
+  // Only count days that have passed (<= todayStrReal) for expected person-days calculation
+  const passedDates = dateList.filter(dStr => dStr <= todayStrReal);
+  const numberOfPassedDays = passedDates.length > 0 ? passedDates.length : 1;
+  const totalExpectedPersonDays = totalEmployees * numberOfPassedDays;
+
   let attendanceWhereSql = `
     WHERE a.is_deleted = 0 
+      AND p.is_deleted = 0
       AND a.attendance_date >= ? 
       AND a.attendance_date <= ?
   `;
@@ -53,41 +92,18 @@ const fetchSummaryMetrics = async (prisma, { todayStr, endDateStr, institutionId
   `;
   const attendances = await prisma.$queryRawUnsafe(attendanceSql, ...attendanceParams);
 
-  let totalPresent = 0;
-  let onTimeCount = 0;
-  let lateCount = 0;
-  let earlyLeaveCount = 0;
-  let totalLateMinutes = 0;
-  let totalEarlyLeaveMinutes = 0;
-  let severeLateCount = 0;
-  let mangkirCount = 0;
-
+  const attendanceByDate = {};
   (attendances || []).forEach(att => {
-    totalPresent++;
-    const late = Number(att.lateMinutes || 0);
-    const early = Number(att.earlyLeaveMinutes || 0);
-    
-    if (late > 0) {
-      lateCount++;
-      totalLateMinutes += late;
-      if (late > 30) severeLateCount++;
-    } else {
-      onTimeCount++;
-    }
-
-    if (early > 0) {
-      earlyLeaveCount++;
-      totalEarlyLeaveMinutes += early;
-    }
-
-    if (att.checkinTime && !att.checkoutTime) {
-      mangkirCount++;
-    }
+    const dStr = att.attendanceDateStr;
+    if (!attendanceByDate[dStr]) attendanceByDate[dStr] = [];
+    attendanceByDate[dStr].push(att);
   });
 
   let requestWhereSql = `
     WHERE ar.is_deleted = 0 
-      AND ar.status = 'APPROVED'
+      AND p.is_deleted = 0
+      AND (at.is_deleted IS NULL OR at.is_deleted = 0)
+      AND LOWER(ar.status) = 'approved'
       AND ar.start_date <= ?
       AND ar.end_date >= ?
   `;
@@ -104,9 +120,13 @@ const fetchSummaryMetrics = async (prisma, { todayStr, endDateStr, institutionId
   const requestSql = `
     SELECT 
       ar.id,
+      ar.person_id AS personId,
+      DATE_FORMAT(ar.start_date, '%Y-%m-%d') AS startDateStr,
+      DATE_FORMAT(ar.end_date, '%Y-%m-%d') AS endDateStr,
       ar.attendance_type_id AS attendanceTypeId,
       at.code AS typeCode,
-      at.name AS typeName
+      at.name AS typeName,
+      at.category AS typeCategory
     FROM attendance_requests ar
     JOIN m_person p ON ar.person_id = p.id
     LEFT JOIN m_attendance_type at ON ar.attendance_type_id = at.id
@@ -114,26 +134,106 @@ const fetchSummaryMetrics = async (prisma, { todayStr, endDateStr, institutionId
   `;
   const requests = await prisma.$queryRawUnsafe(requestSql, ...requestParams);
 
+  let totalPresent = 0;
+  let onTimeCount = 0;
+  let lateCount = 0;
+  let earlyLeaveCount = 0;
+  let totalLateMinutes = 0;
+  let totalEarlyLeaveMinutes = 0;
+  let severeLateCount = 0;
+  let mangkirCount = 0;
+
   let sickCount = 0;
   let leaveCount = 0;
   let permitCount = 0;
   let dutyCount = 0;
+  let alphaCount = 0;
 
-  (requests || []).forEach(req => {
-    const code = String(req.typeCode || '').toUpperCase();
-    if (code.includes('SAKIT')) sickCount++;
-    else if (code.includes('CUTI')) leaveCount++;
-    else if (code.includes('DINAS')) dutyCount++;
-    else permitCount++;
+  dateList.forEach(dStr => {
+    const dayAtts = attendanceByDate[dStr] || [];
+    const presentPersons = new Set();
+    const mangkirPersons = new Set();
+
+    dayAtts.forEach(att => {
+      const hasCheckin = Boolean(att.checkinTime);
+      const hasCheckout = Boolean(att.checkoutTime);
+      const statusUpper = String(att.status || '').toUpperCase();
+      const typeUpper = String(att.attendanceType || '').toUpperCase();
+
+      const isMangkir = (!hasCheckin || !hasCheckout) || statusUpper === 'MANGKIR' || typeUpper === 'M';
+
+      if (isMangkir) {
+        mangkirCount++;
+        if (att.personId) mangkirPersons.add(att.personId);
+      } else {
+        totalPresent++;
+        if (att.personId) presentPersons.add(att.personId);
+      }
+
+      const late = Number(att.lateMinutes || 0);
+      const early = Number(att.earlyLeaveMinutes || 0);
+
+      if (late > 0) {
+        lateCount++;
+        totalLateMinutes += late;
+        if (late > 30) severeLateCount++;
+      } else if (!isMangkir) {
+        onTimeCount++;
+      }
+
+      if (early > 0) {
+        earlyLeaveCount++;
+        totalEarlyLeaveMinutes += early;
+      }
+    });
+
+    const requestPersons = new Set();
+    (requests || []).forEach(req => {
+      if (req.startDateStr && req.endDateStr && dStr >= req.startDateStr && dStr <= req.endDateStr) {
+        if (req.personId) requestPersons.add(req.personId);
+
+        const code = String(req.typeCode || '').trim().toUpperCase();
+        const name = String(req.typeName || '').trim().toUpperCase();
+        const cat = String(req.typeCategory || '').trim().toUpperCase();
+
+        if (code === 'SK' || code.includes('SAKIT') || name.includes('SAKIT')) {
+          sickCount++;
+        } else if (
+          code === 'CT' || 
+          code === 'CTH' || 
+          code === 'CM' || 
+          code === 'CBR' || 
+          code.includes('CUTI') || 
+          name.includes('CUTI') || 
+          cat.includes('CUTI')
+        ) {
+          leaveCount++;
+        } else if (
+          code === 'DL' || 
+          code.includes('DINAS') || 
+          name.includes('DINAS') || 
+          cat.includes('DINAS')
+        ) {
+          dutyCount++;
+        } else {
+          permitCount++;
+        }
+      }
+    });
+
+    const accountedCount = presentPersons.size + mangkirPersons.size + requestPersons.size;
+    const isFutureDay = dStr > todayStrReal;
+    // Bounding future days to 0 alpha count
+    const dayAlpha = isFutureDay ? 0 : Math.max(0, totalEmployees - accountedCount);
+    alphaCount += dayAlpha;
   });
 
   const totalPermits = sickCount + leaveCount + permitCount + dutyCount;
-  const alphaCount = Math.max(0, totalEmployees - totalPresent - totalPermits);
-  const pendingCheckinCount = Math.max(0, totalEmployees - totalPresent);
+  const pendingCheckinCount = Math.max(0, Math.round(totalEmployees - (totalPresent / numberOfPassedDays)));
   const totalAbsenceAlert = mangkirCount + alphaCount;
 
-  const attendancePercentage = totalEmployees > 0 
-    ? Number(((totalPresent / totalEmployees) * 100).toFixed(1)) 
+  const attendancePercentage = totalExpectedPersonDays > 0 
+    ? Number(Math.min(100, ((totalPresent / totalExpectedPersonDays) * 100)).toFixed(1)) 
     : 0;
 
   const totalLateHours = Number((totalLateMinutes / 60).toFixed(1));
@@ -178,9 +278,11 @@ const fetchMonthlyTrend = async (prisma, { monthStr, now, totalEmployees, instit
   const daysInMonth = new Date(year, month, 0).getDate();
   const startMonthStr = `${year}-${String(month).padStart(2, '0')}-01`;
   const endMonthStr = `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+  const todayStrReal = getTodayStrReal();
 
   let monthWhereSql = `
     WHERE a.is_deleted = 0 
+      AND p.is_deleted = 0
       AND a.attendance_date >= ? 
       AND a.attendance_date <= ?
   `;
@@ -199,8 +301,9 @@ const fetchMonthlyTrend = async (prisma, { monthStr, now, totalEmployees, instit
     SELECT 
       DATE_FORMAT(a.attendance_date, '%d') AS dayNum,
       COUNT(a.id) AS totalHadir,
-      SUM(CASE WHEN a.late_minutes <= 0 THEN 1 ELSE 0 END) AS onTimeCount,
+      SUM(CASE WHEN a.late_minutes <= 0 AND a.checkin_time IS NOT NULL AND a.checkout_time IS NOT NULL THEN 1 ELSE 0 END) AS onTimeCount,
       SUM(CASE WHEN a.late_minutes > 0 THEN 1 ELSE 0 END) AS lateCount,
+      SUM(CASE WHEN a.early_leave_minutes > 0 THEN 1 ELSE 0 END) AS earlyLeaveCount,
       SUM(a.late_minutes) AS totalLateMins
     FROM attendances a
     JOIN m_person p ON a.person_id = p.id
@@ -213,34 +316,96 @@ const fetchMonthlyTrend = async (prisma, { monthStr, now, totalEmployees, instit
     monthMap[Number(r.dayNum)] = r;
   });
 
+  let reqWhereSql = `
+    WHERE ar.is_deleted = 0 
+      AND p.is_deleted = 0
+      AND (at.is_deleted IS NULL OR at.is_deleted = 0)
+      AND LOWER(ar.status) = 'approved'
+      AND ar.start_date <= ? 
+      AND ar.end_date >= ?
+  `;
+  const reqParams = [endMonthStr, startMonthStr];
+  if (institutionId) {
+    reqWhereSql += ' AND p.institution_id = ?';
+    reqParams.push(institutionId);
+  }
+  if (departmentId) {
+    reqWhereSql += ' AND p.department_id = ?';
+    reqParams.push(departmentId);
+  }
+
+  const monthRequestSql = `
+    SELECT 
+      DATE_FORMAT(ar.start_date, '%Y-%m-%d') AS startDateStr,
+      DATE_FORMAT(ar.end_date, '%Y-%m-%d') AS endDateStr,
+      ar.person_id AS personId,
+      at.code AS typeCode,
+      at.name AS typeName,
+      at.category AS typeCategory
+    FROM attendance_requests ar
+    JOIN m_person p ON ar.person_id = p.id
+    LEFT JOIN m_attendance_type at ON ar.attendance_type_id = at.id
+    ${reqWhereSql}
+  `;
+  const reqRows = await prisma.$queryRawUnsafe(monthRequestSql, ...reqParams);
+
   const dailyOnTime = [];
   const dailyLate = [];
-  const dailyAbsent = [];
+  const dailyEarlyLeave = [];
+  const dailyPermit = [];
+  const dailyDuty = [];
+  const dailyMangkir = [];
+  const dailyAlpha = [];
   const dailyLateMinutes = [];
 
   for (let d = 1; d <= daysInMonth; d++) {
+    const dayStr = `${year}-${String(month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
     const row = monthMap[d];
-    if (row) {
-      const onT = Number(row.onTimeCount || 0);
-      const lT = Number(row.lateCount || 0);
-      const abS = Math.max(0, totalEmployees - (onT + lT));
-      dailyOnTime.push(onT);
-      dailyLate.push(lT);
-      dailyAbsent.push(abS);
-      dailyLateMinutes.push(Number(row.totalLateMins || 0));
-    } else {
-      dailyOnTime.push(0);
-      dailyLate.push(0);
-      dailyAbsent.push(0);
-      dailyLateMinutes.push(0);
-    }
+
+    const onT = Number(row?.onTimeCount || 0);
+    const lT = Number(row?.lateCount || 0);
+    const eL = Number(row?.earlyLeaveCount || 0);
+    const lM = Number(row?.totalLateMins || 0);
+
+    let permitC = 0;
+    let dutyC = 0;
+    (reqRows || []).forEach(r => {
+      if (r.startDateStr && r.endDateStr && dayStr >= r.startDateStr && dayStr <= r.endDateStr) {
+        const code = String(r.typeCode || '').trim().toUpperCase();
+        const name = String(r.typeName || '').trim().toUpperCase();
+        const cat = String(r.typeCategory || '').trim().toUpperCase();
+
+        if (code === 'DL' || code.includes('DINAS') || name.includes('DINAS') || cat.includes('DINAS')) {
+          dutyC++;
+        } else {
+          permitC++;
+        }
+      }
+    });
+
+    const mangkirC = 0;
+    const isFutureDay = dayStr > todayStrReal;
+    const alphaCount = isFutureDay ? 0 : Math.max(0, totalEmployees - (onT + lT + permitC + dutyC));
+
+    dailyOnTime.push(onT);
+    dailyLate.push(lT);
+    dailyEarlyLeave.push(eL);
+    dailyPermit.push(permitC);
+    dailyDuty.push(dutyC);
+    dailyMangkir.push(mangkirC);
+    dailyAlpha.push(alphaCount);
+    dailyLateMinutes.push(lM);
   }
 
   return {
     daysInMonth,
     dailyOnTime,
     dailyLate,
-    dailyAbsent,
+    dailyEarlyLeave,
+    dailyPermit,
+    dailyDuty,
+    dailyMangkir,
+    dailyAlpha,
     dailyLateMinutes,
   };
 };
@@ -248,13 +413,24 @@ const fetchMonthlyTrend = async (prisma, { monthStr, now, totalEmployees, instit
 /**
  * Helper: Fetch Department Breakdown Summary
  */
-const fetchDepartmentSummary = async (prisma, { todayStr, endDateStr, institutionId }) => {
-  let personWhereSql = 'AND p.is_deleted = 0';
-  const deptParams = [todayStr, endDateStr];
+const fetchDepartmentSummary = async (prisma, { monthStr, now, institutionId, departmentId }) => {
+  const [yStr, mStr] = (monthStr || '').split('-').map(Number);
+  const year = yStr || (now ? now.getFullYear() : new Date().getFullYear());
+  const month = mStr || (now ? now.getMonth() + 1 : new Date().getMonth() + 1);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const startMonthStr = `${year}-${String(month).padStart(2, '0')}-01`;
+  const endMonthStr = `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+
+  const sqlParams = [startMonthStr, endMonthStr];
+  let deptWhereSql = 'WHERE d.is_deleted = 0';
 
   if (institutionId) {
-    personWhereSql += ' AND p.institution_id = ?';
-    deptParams.push(institutionId);
+    deptWhereSql += ' AND d.institution_id = ?';
+    sqlParams.push(institutionId);
+  }
+  if (departmentId) {
+    deptWhereSql += ' AND d.id = ?';
+    sqlParams.push(departmentId);
   }
 
   const deptSql = `
@@ -263,13 +439,17 @@ const fetchDepartmentSummary = async (prisma, { todayStr, endDateStr, institutio
       COUNT(DISTINCT p.id) AS totalEmployees,
       COUNT(DISTINCT a.id) AS presentCount
     FROM m_department d
-    LEFT JOIN m_person p ON p.department_id = d.id ${personWhereSql}
-    LEFT JOIN attendances a ON a.person_id = p.id AND a.attendance_date >= ? AND a.attendance_date <= ? AND a.is_deleted = 0
-    WHERE d.is_deleted = 0
+    LEFT JOIN m_person p ON p.department_id = d.id AND p.is_deleted = 0
+    LEFT JOIN attendances a ON a.person_id = p.id 
+      AND a.attendance_date >= ? 
+      AND a.attendance_date <= ? 
+      AND a.is_deleted = 0
+    ${deptWhereSql}
     GROUP BY d.id, d.name
-    LIMIT 6
+    ORDER BY presentCount DESC, d.name ASC
+    LIMIT 10
   `;
-  const deptRows = await prisma.$queryRawUnsafe(deptSql, ...deptParams);
+  const deptRows = await prisma.$queryRawUnsafe(deptSql, ...sqlParams);
 
   return (deptRows || []).map(d => ({
     id: d.id,
@@ -368,7 +548,7 @@ const getExecutiveSummary = async (params = {}) => {
 
   const [monthlyTrend, departmentSummary, topLateEmployees] = await Promise.all([
     fetchMonthlyTrend(prisma, { monthStr, now, totalEmployees, institutionId, departmentId }),
-    fetchDepartmentSummary(prisma, { todayStr, endDateStr, institutionId }),
+    fetchDepartmentSummary(prisma, { monthStr, now, institutionId, departmentId }),
     fetchTopLateEmployees(prisma, { monthStr, now, institutionId, departmentId }),
   ]);
 
