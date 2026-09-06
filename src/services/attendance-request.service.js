@@ -307,9 +307,14 @@ const update = async (id, data, user = null) => {
     ? Number(data.attendanceTypeId ?? data.attendance_type_id ?? data.leaveTypeId ?? data.leave_type_id)
     : undefined;
 
-  return prisma.attendanceRequest.update({
+  const personId = (data.personId || data.person_id || user?.personId)
+    ? Number(data.personId ?? data.person_id ?? user?.personId)
+    : existing.personId;
+
+  await prisma.attendanceRequest.update({
     where: { id: Number(id) },
     data: {
+      personId,
       attendanceTypeId,
       startDate: (data.startDate || data.start_date) ? new Date(data.startDate ?? data.start_date) : undefined,
       endDate: (data.endDate || data.end_date) ? new Date(data.endDate ?? data.end_date) : undefined,
@@ -322,8 +327,9 @@ const update = async (id, data, user = null) => {
       updatedAt: new Date(),
       updatedBy: user?.id ?? null,
     },
-    select: attendanceRequestSelect,
   });
+
+  return resolveById(id);
 };
 
 const updateStatus = async (id, status, user = null, approvalNote = undefined) => {
