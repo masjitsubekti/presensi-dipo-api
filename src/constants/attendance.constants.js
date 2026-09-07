@@ -56,6 +56,15 @@ const ERROR_CODE = {
 const PHOTO_MAX_SIZE_MB = 5; // max 5 MB
 const PHOTO_ALLOWED_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
+const MONTH_NAMES = [
+  'JANUARI', 'FEBRUARI', 'MARET', 'APRIL', 'MEI', 'JUNI',
+  'JULI', 'AGUSTUS', 'SEPTEMBER', 'OKTOBER', 'NOVEMBER', 'DESEMBER'
+];
+
+const DAY_NAMES = [
+  'MINGGU', 'SENIN', 'SELASA', 'RABU', 'KAMIS', 'JUMAT', 'SABTU'
+];
+
 module.exports = {
   ATTENDANCE_TYPE,
   ATTENDANCE_STATUS,
@@ -65,4 +74,6 @@ module.exports = {
   ERROR_CODE,
   PHOTO_MAX_SIZE_MB,
   PHOTO_ALLOWED_TYPES,
+  MONTH_NAMES,
+  DAY_NAMES,
 };

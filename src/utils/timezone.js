@@ -3,6 +3,22 @@ const moment = require('moment-timezone');
 const APP_TIMEZONE = process.env.APP_TIMEZONE || 'Asia/Jakarta';
 
 /**
+ * Format any Date/timestamp dynamically to any pattern in APP_TIMEZONE
+ * @param {Date|string|number|null} date
+ * @param {string} formatStr - e.g. 'YYYY-MM-DD', 'DD/MM/YYYY', 'HH:mm', 'YYYY-MM-DD HH:mm:ss'
+ * @returns {string|null}
+ */
+const formatTz = (date, formatStr = 'YYYY-MM-DD') => {
+  if (!date) return null;
+  if (typeof date === 'string' && formatStr === 'HH:mm' && /^\d{2}:\d{2}(:\d{2})?$/.test(date)) {
+    return date.substring(0, 5);
+  }
+  const m = moment(date).tz(APP_TIMEZONE);
+  if (!m.isValid()) return null;
+  return m.format(formatStr);
+};
+
+/**
  * Format any Date/timestamp to ISO 8601 string in APP_TIMEZONE (+07:00)
  * @param {Date|string|number|null} date
  * @returns {string|null} e.g. "2026-08-23T12:47:58+07:00"
@@ -93,4 +109,5 @@ module.exports = {
   diffMinutes,
   formatTzISO,
   formatTzString,
+  formatTz,
 };

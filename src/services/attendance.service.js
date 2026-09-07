@@ -317,7 +317,7 @@ const checkIn = async (userId, { photoBuffer, photoMimeType, latitude, longitude
 
     // Save photo to storage (if storage saving is enabled) & log re-checkin
     const photoPath = (photoBuffer && config.saveAttendancePhoto)
-      ? await storage.save(photoBuffer, photoMimeType, 'attendance/checkin')
+      ? await storage.uploadFile(photoBuffer, photoMimeType, 'attendance/checkin', 'checkin')
       : null;
 
     await insertLog({
@@ -397,7 +397,7 @@ const checkIn = async (userId, { photoBuffer, photoMimeType, latitude, longitude
 
   // 6. Save photo (if photo saving to storage is enabled)
   const photoPath = (photoBuffer && config.saveAttendancePhoto)
-    ? await storage.save(photoBuffer, photoMimeType, 'attendance/checkin')
+    ? await storage.uploadFile(photoBuffer, photoMimeType, 'attendance/checkin', 'checkin')
     : null;
 
   // 7. Transaction: insert log + create/update attendance
@@ -562,7 +562,7 @@ const checkOut = async (userId, { photoBuffer, photoMimeType, latitude, longitud
 
   // 6. Save photo (if photo saving to storage is enabled)
   const photoPath = (photoBuffer && config.saveAttendancePhoto)
-    ? await storage.save(photoBuffer, photoMimeType, 'attendance/checkout')
+    ? await storage.uploadFile(photoBuffer, photoMimeType, 'attendance/checkout', 'checkout')
     : null;
 
   // 7. Transaction: insert log + update attendance
@@ -815,6 +815,14 @@ const resolveAll = async (params = {}, userId = null) => {
   }
 
   const { pageNumber, pageSize, skip } = parsePaginationParams(params);
+  const parseBoolean = (val, defaultVal = false) => {
+    if (val === null || val === undefined) return defaultVal;
+    if (typeof val === 'boolean') return val;
+    if (typeof val === 'number') return val === 1;
+    if (typeof val === 'string') return val === 'true' || val === '1';
+    return Boolean(val);
+  };
+  const ignorePaging = parseBoolean(params.ignorePaging, false);
 
   const keyword = params.q ?? null;
   const status = params.status ?? null;
@@ -889,14 +897,20 @@ const resolveAll = async (params = {}, userId = null) => {
   const total = Number(countResult[0]?.total ?? 0);
 
   // Exec Data Query
-  const dataSql = `
+  let dataSql = `
     ${selectAttendanceDTOQuery}
     WHERE ${whereSql}
     ORDER BY ${sortBy} ${sortType}
-    LIMIT ? OFFSET ?
   `;
 
-  const items = await prisma.$queryRawUnsafe(dataSql, ...values, pageSize, skip);
+  let items;
+  if (ignorePaging) {
+    items = await prisma.$queryRawUnsafe(dataSql, ...values);
+  } else {
+    dataSql += ` LIMIT ? OFFSET ?`;
+    items = await prisma.$queryRawUnsafe(dataSql, ...values, pageSize, skip);
+  }
+
   const formattedItems = (items || []).map((item) => ({
     ...item,
     id: Number(item.id),
@@ -915,7 +929,7 @@ const resolveAll = async (params = {}, userId = null) => {
     checkoutPhoto: storage.getUrl(item.checkoutPhoto),
   }));
 
-  return paginate(formattedItems, total, pageNumber, pageSize);
+  return paginate(formattedItems, total, pageNumber, ignorePaging ? (total || 1) : pageSize);
 };
 
 const getLogs = async (userId, params = {}) => resolveAll(params, userId);

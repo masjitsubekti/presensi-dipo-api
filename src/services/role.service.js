@@ -18,9 +18,18 @@ const SORT_MAP = {
  * @param {Object} params
  * @returns {Object}
  */
+const parseBoolean = (val, defaultVal = false) => {
+  if (val === null || val === undefined) return defaultVal;
+  if (typeof val === 'boolean') return val;
+  if (typeof val === 'number') return val === 1;
+  if (typeof val === 'string') return val === 'true' || val === '1';
+  return Boolean(val);
+};
+
 const resolveAll = async (params = {}) => {
   const { pageNumber, pageSize, skip } = parsePaginationParams(params);
   const keyword = params.q ?? params.search ?? null;
+  const ignorePaging = parseBoolean(params.ignorePaging, false);
   const sortBy = SORT_MAP[params.sortBy] ?? 'name';
   const sortType = (params.sortType ?? 'asc').toLowerCase() === 'asc' ? 'asc' : 'desc';
 
@@ -33,17 +42,22 @@ const resolveAll = async (params = {}) => {
       }
     : {};
 
+  const queryOptions = {
+    where,
+    orderBy: { [sortBy]: sortType },
+  };
+
+  if (!ignorePaging) {
+    queryOptions.skip = skip;
+    queryOptions.take = pageSize;
+  }
+
   const [total, items] = await Promise.all([
     prisma.authRole.count({ where }),
-    prisma.authRole.findMany({
-      where,
-      skip,
-      take: pageSize,
-      orderBy: { [sortBy]: sortType },
-    }),
+    prisma.authRole.findMany(queryOptions),
   ]);
 
-  return paginate(items, total, pageNumber, pageSize);
+  return paginate(items, total, pageNumber, ignorePaging ? (total || 1) : pageSize);
 };
 
 /**

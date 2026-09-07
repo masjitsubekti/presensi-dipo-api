@@ -46,8 +46,9 @@ exports.changePassword = async (req, res, next) => {
         .isLength({ min: 6 }).withMessage('Password baru minimal 6 karakter'),
     ]);
 
+    const targetUserId = req.params.id || req.user?.id;
     const { oldPassword, newPassword } = req.body;
-    await authService.changePassword(req.user.id, oldPassword, newPassword);
+    await authService.changePassword(targetUserId, oldPassword, newPassword);
     return response.success(res, null, 'Password berhasil diubah');
   } catch (err) {
     if (err.status) return response.error(res, err.message, err.status, err.errors);

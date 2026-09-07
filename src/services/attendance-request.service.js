@@ -129,6 +129,14 @@ const resolveAll = async (params = {}, userId = null) => {
   }
 
   const { pageNumber, pageSize, skip } = parsePaginationParams(params);
+  const parseBoolean = (val, defaultVal = false) => {
+    if (val === null || val === undefined) return defaultVal;
+    if (typeof val === 'boolean') return val;
+    if (typeof val === 'number') return val === 1;
+    if (typeof val === 'string') return val === 'true' || val === '1';
+    return Boolean(val);
+  };
+  const ignorePaging = parseBoolean(params.ignorePaging, false);
 
   const keyword = params.q ?? null;
   const status = params.status ?? null;
@@ -207,14 +215,20 @@ const resolveAll = async (params = {}, userId = null) => {
   const countResult = await prisma.$queryRawUnsafe(countSql, ...values);
   const total = Number(countResult[0]?.total ?? 0);
 
-  const dataSql = `
+  let dataSql = `
     ${selectAttendanceRequestDTOQuery}
     WHERE ${whereSql}
     ORDER BY ${sortBy} ${sortType}
-    LIMIT ? OFFSET ?
   `;
 
-  const items = await prisma.$queryRawUnsafe(dataSql, ...values, pageSize, skip);
+  let items;
+  if (ignorePaging) {
+    items = await prisma.$queryRawUnsafe(dataSql, ...values);
+  } else {
+    dataSql += ` LIMIT ? OFFSET ?`;
+    items = await prisma.$queryRawUnsafe(dataSql, ...values, pageSize, skip);
+  }
+
   const formattedItems = (items || []).map((item) => ({
     ...item,
     id: Number(item.id),
@@ -226,7 +240,7 @@ const resolveAll = async (params = {}, userId = null) => {
     filePathUrl: storage.getUrl(item.filePath),
   }));
 
-  return paginate(formattedItems, total, pageNumber, pageSize);
+  return paginate(formattedItems, total, pageNumber, ignorePaging ? (total || 1) : pageSize);
 };
 
 const resolveById = async (id) => {
@@ -277,14 +291,30 @@ const create = async (data, user = null) => {
 };
 
 const update = async (id, data, user = null) => {
-  await getById(id);
+  const existing = await getById(id);
+
+  // If a new file was uploaded, delete the old file from storage (Local / Supabase)
+  const newFilePath = data.filePath ?? data.file_path;
+  if (newFilePath && existing.filePath && existing.filePath !== newFilePath) {
+    try {
+      await storage.deleteFile(existing.filePath);
+    } catch (err) {
+      console.error('[AttendanceRequestService] Failed to delete old file on update:', err.message || err);
+    }
+  }
+
   const attendanceTypeId = (data.attendanceTypeId || data.attendance_type_id || data.leaveTypeId || data.leave_type_id)
     ? Number(data.attendanceTypeId ?? data.attendance_type_id ?? data.leaveTypeId ?? data.leave_type_id)
     : undefined;
 
-  return prisma.attendanceRequest.update({
+  const personId = (data.personId || data.person_id || user?.personId)
+    ? Number(data.personId ?? data.person_id ?? user?.personId)
+    : existing.personId;
+
+  await prisma.attendanceRequest.update({
     where: { id: Number(id) },
     data: {
+      personId,
       attendanceTypeId,
       startDate: (data.startDate || data.start_date) ? new Date(data.startDate ?? data.start_date) : undefined,
       endDate: (data.endDate || data.end_date) ? new Date(data.endDate ?? data.end_date) : undefined,
@@ -292,13 +322,14 @@ const update = async (id, data, user = null) => {
       endTime: data.endTime ?? data.end_time ?? undefined,
       durationType: data.durationType ?? data.duration_type ?? undefined,
       reason: data.reason ?? undefined,
-      filePath: data.filePath ?? data.file_path ?? undefined,
+      filePath: newFilePath ?? undefined,
       status: data.status ?? undefined,
       updatedAt: new Date(),
       updatedBy: user?.id ?? null,
     },
-    select: attendanceRequestSelect,
   });
+
+  return resolveById(id);
 };
 
 const updateStatus = async (id, status, user = null, approvalNote = undefined) => {
@@ -318,10 +349,20 @@ const updateStatus = async (id, status, user = null, approvalNote = undefined) =
 };
 
 const remove = async (id) => {
-  await getById(id);
+  const existing = await getById(id);
+
+  // Remove file from storage if present
+  if (existing.filePath) {
+    try {
+      await storage.deleteFile(existing.filePath);
+    } catch (err) {
+      console.error('[AttendanceRequestService] Failed to delete file on remove:', err.message || err);
+    }
+  }
+
   await prisma.attendanceRequest.update({
     where: { id: Number(id) },
-    data: { isDeleted: true, deletedAt: new Date() },
+    data: { isDeleted: true, deletedAt: new Date(), filePath: null },
   });
 };
 
