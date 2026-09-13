@@ -6,7 +6,7 @@ const reportService = require('../services/report.service');
 
 const getEmployeeRecap = async (req, res, next) => {
   try {
-    const { personId, person_id, month, year, institutionId, institution_id } = req.query;
+    const { personId, person_id, month, year, startDate, start_date, endDate, end_date, institutionId, institution_id } = req.query;
     
     const targetPersonId = personId || person_id;
     if (!targetPersonId) {
@@ -20,6 +20,8 @@ const getEmployeeRecap = async (req, res, next) => {
       personId: targetPersonId,
       month,
       year,
+      startDate: startDate || start_date,
+      endDate: endDate || end_date,
       institutionId: institutionId || institution_id,
     });
 

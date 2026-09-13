@@ -11,6 +11,7 @@ const appConfigRoutes = require('./app-config.routes');
 const masterRoutes = require('./master.routes');
 const attendanceRoutes = require('./attendance.routes');
 const attendanceRequestRoutes = require('./attendance-request.routes');
+const manualAttendanceRoutes = require('./manual-attendance.routes');
 const reportRoutes = require('./report.routes');
 const dashboardRoutes = require('./dashboard.routes');
 const fileRoutes = require('./file.routes');
@@ -37,6 +38,7 @@ router.use('/master', masterRoutes);
 // ==================== Attendance & Requests ====================
 router.use('/attendance', attendanceRoutes);
 router.use('/attendance-request', attendanceRequestRoutes);
+router.use('/attendance-manual', manualAttendanceRoutes);
 
 // ==================== Dashboard, Report & Files ====================
 router.use('/dashboard', dashboardRoutes);
