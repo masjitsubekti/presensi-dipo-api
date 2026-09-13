@@ -953,7 +953,7 @@ const resolveAll = async (params = {}, userId = null) => {
   }
 
   if (keyword) {
-    conditions.push('CONCAT(IFNULL(p.name,""), IFNULL(p.nip,""), IFNULL(d.name,""), IFNULL(a.attendance_type,""), IFNULL(a.status,"")) LIKE ?');
+    conditions.push("CONCAT(IFNULL(p.name,''), IFNULL(p.nip,''), IFNULL(d.name,''), IFNULL(a.attendance_type,''), IFNULL(a.status,'')) LIKE ?");
     values.push(`%${keyword}%`);
   }
 
