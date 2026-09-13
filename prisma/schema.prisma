@@ -237,6 +237,7 @@ model MWorkTime {
   updatedAt           DateTime?         @updatedAt @map("updated_at") @db.Timestamp(0)
   isDeleted           Boolean           @default(false) @map("is_deleted")
   shiftDetails        WorkShiftDetail[]
+  attendances         Attendance[]
 
   @@map("m_work_time")
 }
@@ -347,6 +348,11 @@ model Attendance {
   teachingStatus        String?   @map("teaching_status") @db.VarChar(30)
   mode                  String    @default("auto") @db.VarChar(20)
   attendanceTypeId      Int?      @map("attendance_type_id") @db.UnsignedInt
+  workTimeId            Int?      @map("work_time_id") @db.UnsignedInt
+  workStartTime         String?   @map("work_start_time") @db.VarChar(10)
+  workEndTime           String?   @map("work_end_time") @db.VarChar(10)
+  lateTolerance         Int?      @default(0) @map("late_tolerance")
+  earlyLeaveTolerance   Int?      @default(0) @map("early_leave_tolerance")
   lateMinutes           Int?      @map("late_minutes")
   earlyLeaveMinutes     Int?      @map("early_leave_minutes")
   overtimeMinutes       Int?      @map("overtime_minutes")
@@ -358,6 +364,7 @@ model Attendance {
   deletedAt             DateTime? @map("deleted_at") @db.Timestamp(0)
   isDeleted             Boolean   @default(false) @map("is_deleted")
   attendanceTypeRef     MAttendanceType? @relation(fields: [attendanceTypeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  workTimeRef           MWorkTime?       @relation(fields: [workTimeId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   logs                  AttendanceLog[]
 
   @@index([institutionId, personId, attendanceDate], map: "attendance_institution_person_date")

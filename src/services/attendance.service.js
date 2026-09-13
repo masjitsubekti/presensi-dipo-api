@@ -71,6 +71,26 @@ const getAttendanceConfig = async () => {
 };
 
 /**
+ * Helper to resolve REGULAR attendance type ID from m_attendance_type
+ */
+const resolveRegularAttendanceTypeId = async () => {
+  const item = await prisma.mAttendanceType.findFirst({
+    where: {
+      isDeleted: false,
+      OR: [
+        { code: 'REG' },
+        { code: 'REGULAR' },
+        { code: { contains: 'REG' } },
+        { name: { contains: 'REGULAR' } },
+        { category: 'attendance' },
+      ],
+    },
+    select: { id: true },
+  });
+  return item?.id ? Number(item.id) : null;
+};
+
+/**
  * Get today's attendance record for a user
  */
 const getTodayAttendance = async (userId) => {
@@ -389,11 +409,21 @@ const checkIn = async (userId, { photoBuffer, photoMimeType, latitude, longitude
     const workStartMinutes = timeToMinutes(wt.workStartTime);
     const tolerance = wt.lateTolerance ?? 0;
 
-    if (nowMinutes > workStartMinutes + tolerance) {
+    if (nowMinutes > workStartMinutes) {
       lateMinutes = nowMinutes - workStartMinutes;
-      attendanceStatus = ATTENDANCE_STATUS.LATE;
+      if (nowMinutes > workStartMinutes + tolerance) {
+        attendanceStatus = ATTENDANCE_STATUS.LATE;
+      }
     }
   }
+
+  const wt = shift?.workTime;
+  const workTimeId = wt?.id ? Number(wt.id) : null;
+  const workStartTime = wt?.workStartTime || null;
+  const workEndTime = wt?.workEndTime || null;
+  const lateTolerance = wt?.lateTolerance !== undefined ? Number(wt.lateTolerance) : 0;
+  const earlyLeaveTolerance = wt?.earlyLeaveTolerance !== undefined ? Number(wt.earlyLeaveTolerance) : 0;
+  const attendanceTypeId = await resolveRegularAttendanceTypeId();
 
   // 6. Save photo (if photo saving to storage is enabled)
   const photoPath = (photoBuffer && config.saveAttendancePhoto)
@@ -408,6 +438,7 @@ const checkIn = async (userId, { photoBuffer, photoMimeType, latitude, longitude
         institutionId,
         personId,
         attendanceType: ATTENDANCE_TYPE.REGULAR,
+        attendanceTypeId,
         attendanceDate: new Date(today),
         checkinTime: now,
         checkinPhoto: photoPath,
@@ -415,6 +446,11 @@ const checkIn = async (userId, { photoBuffer, photoMimeType, latitude, longitude
         checkinLatitude: Number(latitude),
         checkinLongitude: Number(longitude),
         checkinDistanceMeter: distance,
+        workTimeId,
+        workStartTime,
+        workEndTime,
+        lateTolerance,
+        earlyLeaveTolerance,
         status: attendanceStatus,
         lateMinutes,
         createdAt: now,
@@ -560,6 +596,14 @@ const checkOut = async (userId, { photoBuffer, photoMimeType, latitude, longitud
     }
   }
 
+  const wt = shift?.workTime;
+  const workTimeId = wt?.id ? Number(wt.id) : null;
+  const workStartTime = wt?.workStartTime || null;
+  const workEndTime = wt?.workEndTime || null;
+  const lateTolerance = wt?.lateTolerance !== undefined ? Number(wt.lateTolerance) : 0;
+  const earlyLeaveTolerance = wt?.earlyLeaveTolerance !== undefined ? Number(wt.earlyLeaveTolerance) : 0;
+  const attendanceTypeId = await resolveRegularAttendanceTypeId();
+
   // 6. Save photo (if photo saving to storage is enabled)
   const photoPath = (photoBuffer && config.saveAttendancePhoto)
     ? await storage.uploadFile(photoBuffer, photoMimeType, 'attendance/checkout', 'checkout')
@@ -580,6 +624,12 @@ const checkOut = async (userId, { photoBuffer, photoMimeType, latitude, longitud
           checkoutDistanceMeter: distance,
           earlyLeaveMinutes,
           overtimeMinutes,
+          attendanceTypeId: existing.attendanceTypeId ?? attendanceTypeId,
+          workTimeId: existing.workTimeId ?? workTimeId,
+          workStartTime: existing.workStartTime ?? workStartTime,
+          workEndTime: existing.workEndTime ?? workEndTime,
+          lateTolerance: existing.lateTolerance ?? lateTolerance,
+          earlyLeaveTolerance: existing.earlyLeaveTolerance ?? earlyLeaveTolerance,
           status: existing.status || (isNonWorkingDay ? ATTENDANCE_STATUS.PRESENT : ATTENDANCE_STATUS.LATE),
           updatedAt: now,
           updatedBy: userId,
@@ -591,6 +641,7 @@ const checkOut = async (userId, { photoBuffer, photoMimeType, latitude, longitud
           institutionId,
           personId,
           attendanceType: ATTENDANCE_TYPE.REGULAR,
+          attendanceTypeId,
           attendanceDate: new Date(today),
           checkinTime: null,
           checkoutTime: now,
@@ -599,6 +650,11 @@ const checkOut = async (userId, { photoBuffer, photoMimeType, latitude, longitud
           checkoutLatitude: Number(latitude),
           checkoutLongitude: Number(longitude),
           checkoutDistanceMeter: distance,
+          workTimeId,
+          workStartTime,
+          workEndTime,
+          lateTolerance,
+          earlyLeaveTolerance,
           status: isNonWorkingDay ? ATTENDANCE_STATUS.PRESENT : ATTENDANCE_STATUS.LATE,
           earlyLeaveMinutes,
           overtimeMinutes,
@@ -1012,6 +1068,11 @@ const serializeAttendance = (a) => ({
   checkinLocationName: a.checkinLocation?.name ?? null,
   checkoutLocationName: a.checkoutLocation?.name ?? null,
   locationName: a.checkinLocation?.name ?? a.checkoutLocation?.name ?? null,
+  workTimeId: a.workTimeId ? Number(a.workTimeId) : null,
+  workStartTime: a.workStartTime || null,
+  workEndTime: a.workEndTime || null,
+  lateTolerance: a.lateTolerance ?? 0,
+  earlyLeaveTolerance: a.earlyLeaveTolerance ?? 0,
   status: a.status,
   lateMinutes: a.lateMinutes,
   earlyLeaveMinutes: a.earlyLeaveMinutes,
