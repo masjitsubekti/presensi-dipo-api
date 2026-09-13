@@ -785,6 +785,11 @@ const selectAttendanceDTOQuery = `
     a.checkout_distance_meter AS checkoutDistanceMeter,
     a.status,
     a.teaching_status AS teachingStatus,
+    a.mode,
+    a.attendance_type_id AS attendanceTypeId,
+    at.name AS attendanceTypeName,
+    at.code AS attendanceTypeCode,
+    at.color_label AS attendanceTypeColorLabel,
     a.late_minutes AS lateMinutes,
     a.early_leave_minutes AS earlyLeaveMinutes,
     a.overtime_minutes AS overtimeMinutes,
@@ -795,6 +800,7 @@ const selectAttendanceDTOQuery = `
   LEFT JOIN m_department d ON p.department_id = d.id
   LEFT JOIN m_position pos ON p.position_id = pos.id
   LEFT JOIN m_institution inst ON a.institution_id = inst.id
+  LEFT JOIN m_attendance_type at ON a.attendance_type_id = at.id
   LEFT JOIN m_location loc_in ON a.checkin_location_id = loc_in.id
   LEFT JOIN m_location loc_out ON a.checkout_location_id = loc_out.id
 `;
@@ -826,6 +832,7 @@ const resolveAll = async (params = {}, userId = null) => {
 
   const keyword = params.q ?? null;
   const status = params.status ?? null;
+  const mode = params.mode ?? null;
   const attendanceType = params.attendanceType ?? params.attendance_type ?? null;
   const departmentId = params.departmentId ?? params.department_id ?? null;
   const positionId = params.positionId ?? params.position_id ?? null;
@@ -839,6 +846,11 @@ const resolveAll = async (params = {}, userId = null) => {
 
   const conditions = ['a.is_deleted = 0'];
   const values = [];
+
+  if (mode) {
+    conditions.push('a.mode = ?');
+    values.push(mode);
+  }
 
   // Institution scope filter (allow filter by institutionId or scope to user's institution if assigned)
   if (institutionId) {
