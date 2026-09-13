@@ -218,7 +218,7 @@ const resolveAll = async (params = {}, userId = null) => {
   }
 
   if (keyword) {
-    conditions.push('CONCAT(IFNULL(p.name,""), IFNULL(p.nip,""), IFNULL(d.name,""), IFNULL(pos.name,""), IFNULL(a.note,""), IFNULL(at.name,""), IFNULL(a.status,"")) LIKE ?');
+    conditions.push('CONCAT(IFNULL(p.name,""), IFNULL(p.nip,""), IFNULL(inst.name,""), IFNULL(d.name,""), IFNULL(pos.name,""), IFNULL(a.note,""), IFNULL(at.name,""), IFNULL(a.status,"")) LIKE ?');
     values.push(`%${keyword}%`);
   }
 
@@ -286,6 +286,221 @@ const resolveById = async (id) => {
 };
 
 /**
+ * Resolve log history / audit trail for a specific attendance record
+ */
+const resolveLogsById = async (id) => {
+  const attendance = await prisma.attendance.findFirst({
+    where: { id: BigInt(id), isDeleted: false },
+    select: { id: true, personId: true, institutionId: true, attendanceDate: true },
+  });
+
+  if (!attendance) throw { status: 404, message: 'Data presensi tidak ditemukan' };
+
+  const cleanDateStr = moment(attendance.attendanceDate).format('YYYY-MM-DD');
+  const startOfDay = new Date(`${cleanDateStr}T00:00:00.000Z`);
+  const endOfDay = new Date(`${cleanDateStr}T23:59:59.999Z`);
+
+  const sql = `
+    SELECT 
+      al.id,
+      al.institution_id AS institutionId,
+      al.person_id AS personId,
+      al.date_time AS dateTime,
+      al.attendance_id AS attendanceId,
+      al.attendance_type AS attendanceType,
+      al.action,
+      al.device,
+      al.ip_address AS ipAddress,
+      al.status,
+      al.location_status AS locationStatus,
+      al.rejection_reason AS rejectionReason,
+      al.photo,
+      al.note,
+      al.created_by AS createdBy,
+      al.created_at AS createdAt,
+      u.name AS creatorName,
+      u.username AS creatorUsername,
+      loc.name AS locationName
+    FROM attendance_logs al
+    LEFT JOIN auth_user u ON al.created_by = u.id
+    LEFT JOIN m_location loc ON al.attendance_location_id = loc.id
+    WHERE (al.attendance_id = ? OR (al.person_id = ? AND al.date_time >= ? AND al.date_time <= ?))
+      AND al.is_deleted = 0
+    ORDER BY al.created_at ASC
+  `;
+
+  const logs = await prisma.$queryRawUnsafe(sql, BigInt(id), Number(attendance.personId), startOfDay, endOfDay);
+
+  return (logs || []).map((l) => ({
+    id: Number(l.id),
+    dateTime: l.dateTime,
+    action: l.action,
+    attendanceType: l.attendanceType,
+    device: l.device,
+    ipAddress: l.ipAddress,
+    status: l.status,
+    locationStatus: l.locationStatus,
+    rejectionReason: l.rejectionReason,
+    photo: storage.getUrl(l.photo),
+    locationName: l.locationName,
+    note: l.note,
+    creatorName: l.creatorName || l.creatorUsername || 'Sistem / Mandiri',
+    createdAt: l.createdAt,
+  }));
+};
+
+/**
+ * Helper to check if a log with identical person, action, and dateTime already exists
+ */
+const hasDuplicateLog = async (personId, action, dateTime) => {
+  if (!dateTime) return false;
+  const existingLog = await prisma.attendanceLog.findFirst({
+    where: {
+      personId,
+      action,
+      dateTime,
+      isDeleted: false,
+    },
+  });
+  return !!existingLog;
+};
+
+/**
+ * Helper to sync daily attendance summary from logs & inputs
+ */
+const syncDailyAttendanceSummary = async ({
+  institutionId,
+  personId,
+  attendanceDate,
+  attendanceDateStr,
+  attendanceType,
+  attendanceTypeId,
+  checkinTime,
+  checkoutTime,
+  status,
+  teachingStatus,
+  mode,
+  lateMinutes,
+  earlyLeaveMinutes,
+  overtimeMinutes,
+  note,
+  user,
+}) => {
+  const now = nowInTz();
+
+  // Find existing attendance record
+  const existing = await prisma.attendance.findFirst({
+    where: {
+      personId,
+      institutionId,
+      attendanceDate,
+      attendanceType,
+      isDeleted: false,
+    },
+  });
+
+  // Query logs for this person on this date
+  const cleanDateStr = moment(attendanceDateStr).format('YYYY-MM-DD');
+  const startOfDay = new Date(`${cleanDateStr}T00:00:00.000Z`);
+  const endOfDay = new Date(`${cleanDateStr}T23:59:59.999Z`);
+
+  const logs = await prisma.attendanceLog.findMany({
+    where: {
+      personId,
+      institutionId,
+      dateTime: {
+        gte: startOfDay,
+        lte: endOfDay,
+      },
+      status: 'SUCCESS',
+      isDeleted: false,
+    },
+    orderBy: { dateTime: 'asc' },
+  });
+
+  const checkinLogs = logs.filter((l) => l.action?.toLowerCase() === 'checkin');
+  const checkoutLogs = logs.filter((l) => l.action?.toLowerCase() === 'checkout');
+
+  // Earliest checkin log or input checkinTime
+  const earliestCheckinLog = checkinLogs[0]?.dateTime ?? null;
+  // Latest checkout log or input checkoutTime
+  const latestCheckoutLog = checkoutLogs[checkoutLogs.length - 1]?.dateTime ?? null;
+
+  const finalCheckinTime = checkinTime !== null
+    ? checkinTime
+    : (earliestCheckinLog ?? existing?.checkinTime ?? null);
+
+  const finalCheckoutTime = checkoutTime !== null
+    ? checkoutTime
+    : (latestCheckoutLog ?? existing?.checkoutTime ?? null);
+
+  let attendanceId;
+
+  if (existing) {
+    const updated = await prisma.attendance.update({
+      where: { id: existing.id },
+      data: {
+        attendanceTypeId: attendanceTypeId ?? existing.attendanceTypeId,
+        checkinTime: finalCheckinTime,
+        checkoutTime: finalCheckoutTime,
+        status: status ?? existing.status,
+        teachingStatus: teachingStatus ?? existing.teachingStatus,
+        mode: mode ?? 'manual',
+        lateMinutes: lateMinutes ?? existing.lateMinutes ?? 0,
+        earlyLeaveMinutes: earlyLeaveMinutes ?? existing.earlyLeaveMinutes ?? 0,
+        overtimeMinutes: overtimeMinutes ?? existing.overtimeMinutes ?? 0,
+        note: note !== undefined ? note : existing.note,
+        updatedAt: now,
+        updatedBy: user?.id ?? null,
+      },
+    });
+    attendanceId = updated.id;
+  } else {
+    const created = await prisma.attendance.create({
+      data: {
+        institutionId,
+        personId,
+        attendanceType,
+        attendanceTypeId,
+        attendanceDate,
+        checkinTime: finalCheckinTime,
+        checkoutTime: finalCheckoutTime,
+        status,
+        teachingStatus,
+        mode,
+        lateMinutes,
+        earlyLeaveMinutes,
+        overtimeMinutes,
+        note,
+        createdAt: now,
+        createdBy: user?.id ?? null,
+        updatedBy: user?.id ?? null,
+      },
+    });
+    attendanceId = created.id;
+  }
+
+  // Link unlinked logs for this day to this attendanceId
+  await prisma.attendanceLog.updateMany({
+    where: {
+      personId,
+      institutionId,
+      dateTime: {
+        gte: startOfDay,
+        lte: endOfDay,
+      },
+      attendanceId: null,
+      isDeleted: false,
+    },
+    data: {
+      attendanceId,
+    },
+  });
+
+  return attendanceId;
+};
+
+/**
  * Create manual attendance / dispensation for single or multiple employees
  */
 const create = async (data, user = null) => {
@@ -337,7 +552,7 @@ const create = async (data, user = null) => {
     const personInfo = personMap.get(pid);
     const institutionId = Number(data.institutionId || data.institution_id || personInfo?.institutionId || user?.institutionId || 1);
 
-    // Check if an attendance record already exists for this person on this date & attendanceType
+    // Check existing attendance row
     const existing = await prisma.attendance.findFirst({
       where: {
         personId: pid,
@@ -348,50 +563,72 @@ const create = async (data, user = null) => {
       },
     });
 
-    if (existing) {
-      // Update existing record with manual data
-      const updated = await prisma.attendance.update({
-        where: { id: existing.id },
-        data: {
-          attendanceTypeId,
-          checkinTime: checkinTime !== null ? checkinTime : existing.checkinTime,
-          checkoutTime: checkoutTime !== null ? checkoutTime : existing.checkoutTime,
-          status,
-          teachingStatus,
-          mode,
-          lateMinutes,
-          earlyLeaveMinutes,
-          overtimeMinutes,
-          note,
-          updatedAt: now,
-          updatedBy: user?.id ?? null,
-        },
-      });
-      createdResults.push(Number(updated.id));
-    } else {
-      // Create new attendance record
-      const created = await prisma.attendance.create({
-        data: {
-          institutionId,
-          personId: pid,
-          attendanceType,
-          attendanceTypeId,
-          attendanceDate,
-          checkinTime,
-          checkoutTime,
-          status,
-          teachingStatus,
-          mode,
-          lateMinutes,
-          earlyLeaveMinutes,
-          overtimeMinutes,
-          note,
-          createdAt: now,
-          createdBy: user?.id ?? null,
-        },
-      });
-      createdResults.push(Number(created.id));
+    const isCheckinChanged = checkinTime && (!existing?.checkinTime || checkinTime.getTime() !== new Date(existing.checkinTime).getTime());
+    const isCheckoutChanged = checkoutTime && (!existing?.checkoutTime || checkoutTime.getTime() !== new Date(existing.checkoutTime).getTime());
+
+    // 1. Insert Log for Check-in if time is new or changed & no duplicate log exists
+    if (isCheckinChanged) {
+      const isDuplicate = await hasDuplicateLog(pid, 'checkin', checkinTime);
+      if (!isDuplicate) {
+        await prisma.attendanceLog.create({
+          data: {
+            institutionId,
+            personId: pid,
+            attendanceType,
+            action: 'checkin',
+            dateTime: checkinTime,
+            device: 'manual_dispensation',
+            status: 'SUCCESS',
+            note,
+            createdAt: now,
+            createdBy: user?.id ?? null,
+          },
+        });
+      }
     }
+
+    // 2. Insert Log for Check-out if time is new or changed & no duplicate log exists
+    if (isCheckoutChanged) {
+      const isDuplicate = await hasDuplicateLog(pid, 'checkout', checkoutTime);
+      if (!isDuplicate) {
+        await prisma.attendanceLog.create({
+          data: {
+            institutionId,
+            personId: pid,
+            attendanceType,
+            action: 'checkout',
+            dateTime: checkoutTime,
+            device: 'manual_dispensation',
+            status: 'SUCCESS',
+            note,
+            createdAt: now,
+            createdBy: user?.id ?? null,
+          },
+        });
+      }
+    }
+
+    // 3. Sync Daily Attendance Summary
+    const attendanceId = await syncDailyAttendanceSummary({
+      institutionId,
+      personId: pid,
+      attendanceDate,
+      attendanceDateStr,
+      attendanceType,
+      attendanceTypeId,
+      checkinTime,
+      checkoutTime,
+      status,
+      teachingStatus,
+      mode,
+      lateMinutes,
+      earlyLeaveMinutes,
+      overtimeMinutes,
+      note,
+      user,
+    });
+
+    createdResults.push(Number(attendanceId));
   }
 
   return {
@@ -427,26 +664,73 @@ const update = async (id, data, user = null) => {
     : existing.attendanceTypeId;
 
   const personId = (data.personId || data.person_id) ? Number(data.personId || data.person_id) : existing.personId;
+  const institutionId = Number(existing.institutionId);
+  const note = data.note !== undefined ? data.note : existing.note;
+  const now = nowInTz();
 
-  await prisma.attendance.update({
-    where: { id: BigInt(id) },
-    data: {
-      personId,
-      attendanceDate,
-      attendanceType: data.attendanceType ?? data.attendance_type ?? existing.attendanceType,
-      attendanceTypeId,
-      checkinTime,
-      checkoutTime,
-      status: data.status ?? existing.status,
-      teachingStatus: data.teachingStatus ?? data.teaching_status ?? existing.teachingStatus,
-      mode: data.mode ?? 'manual',
-      lateMinutes: data.lateMinutes !== undefined ? Number(data.lateMinutes) : (data.late_minutes !== undefined ? Number(data.late_minutes) : existing.lateMinutes),
-      earlyLeaveMinutes: data.earlyLeaveMinutes !== undefined ? Number(data.earlyLeaveMinutes) : (data.early_leave_minutes !== undefined ? Number(data.early_leave_minutes) : existing.earlyLeaveMinutes),
-      overtimeMinutes: data.overtimeMinutes !== undefined ? Number(data.overtimeMinutes) : (data.overtime_minutes !== undefined ? Number(data.overtime_minutes) : existing.overtimeMinutes),
-      note: data.note !== undefined ? data.note : existing.note,
-      updatedAt: nowInTz(),
-      updatedBy: user?.id ?? null,
-    },
+  const isCheckinChanged = checkinTime && (!existing.checkinTime || checkinTime.getTime() !== new Date(existing.checkinTime).getTime());
+  const isCheckoutChanged = checkoutTime && (!existing.checkoutTime || checkoutTime.getTime() !== new Date(existing.checkoutTime).getTime());
+
+  // Insert log if checkin/checkout actually changed
+  if (isCheckinChanged) {
+    const isDuplicate = await hasDuplicateLog(personId, 'checkin', checkinTime);
+    if (!isDuplicate) {
+      await prisma.attendanceLog.create({
+        data: {
+          institutionId,
+          personId,
+          attendanceId: existing.id,
+          attendanceType: data.attendanceType ?? data.attendance_type ?? existing.attendanceType,
+          action: 'checkin',
+          dateTime: checkinTime,
+          device: 'manual_dispensation',
+          status: 'SUCCESS',
+          note,
+          createdAt: now,
+          createdBy: user?.id ?? null,
+        },
+      });
+    }
+  }
+
+  if (isCheckoutChanged) {
+    const isDuplicate = await hasDuplicateLog(personId, 'checkout', checkoutTime);
+    if (!isDuplicate) {
+      await prisma.attendanceLog.create({
+        data: {
+          institutionId,
+          personId,
+          attendanceId: existing.id,
+          attendanceType: data.attendanceType ?? data.attendance_type ?? existing.attendanceType,
+          action: 'checkout',
+          dateTime: checkoutTime,
+          device: 'manual_dispensation',
+          status: 'SUCCESS',
+          note,
+          createdAt: now,
+          createdBy: user?.id ?? null,
+        },
+      });
+    }
+  }
+
+  await syncDailyAttendanceSummary({
+    institutionId,
+    personId,
+    attendanceDate,
+    attendanceDateStr,
+    attendanceType: data.attendanceType ?? data.attendance_type ?? existing.attendanceType,
+    attendanceTypeId,
+    checkinTime,
+    checkoutTime,
+    status: data.status ?? existing.status,
+    teachingStatus: data.teachingStatus ?? data.teaching_status ?? existing.teachingStatus,
+    mode: data.mode ?? 'manual',
+    lateMinutes: data.lateMinutes !== undefined ? Number(data.lateMinutes) : (data.late_minutes !== undefined ? Number(data.late_minutes) : existing.lateMinutes),
+    earlyLeaveMinutes: data.earlyLeaveMinutes !== undefined ? Number(data.earlyLeaveMinutes) : (data.early_leave_minutes !== undefined ? Number(data.early_leave_minutes) : existing.earlyLeaveMinutes),
+    overtimeMinutes: data.overtimeMinutes !== undefined ? Number(data.overtimeMinutes) : (data.overtime_minutes !== undefined ? Number(data.overtime_minutes) : existing.overtimeMinutes),
+    note: data.note !== undefined ? data.note : existing.note,
+    user,
   });
 
   return resolveById(id);
@@ -461,11 +745,23 @@ const remove = async (id, user = null) => {
   });
   if (!existing) throw { status: 404, message: 'Data presensi tidak ditemukan' };
 
+  const now = nowInTz();
+
   await prisma.attendance.update({
     where: { id: BigInt(id) },
     data: {
       isDeleted: true,
-      deletedAt: nowInTz(),
+      deletedAt: now,
+      updatedBy: user?.id ?? null,
+    },
+  });
+
+  // Also soft delete linked logs
+  await prisma.attendanceLog.updateMany({
+    where: { attendanceId: BigInt(id) },
+    data: {
+      isDeleted: true,
+      deletedAt: now,
       updatedBy: user?.id ?? null,
     },
   });
@@ -477,12 +773,22 @@ const remove = async (id, user = null) => {
 const bulkRemove = async (ids = [], user = null) => {
   if (!Array.isArray(ids) || ids.length === 0) return { count: 0 };
   const bigIntIds = ids.map(BigInt);
+  const now = nowInTz();
 
   const result = await prisma.attendance.updateMany({
     where: { id: { in: bigIntIds } },
     data: {
       isDeleted: true,
-      deletedAt: nowInTz(),
+      deletedAt: now,
+      updatedBy: user?.id ?? null,
+    },
+  });
+
+  await prisma.attendanceLog.updateMany({
+    where: { attendanceId: { in: bigIntIds } },
+    data: {
+      isDeleted: true,
+      deletedAt: now,
       updatedBy: user?.id ?? null,
     },
   });
@@ -493,6 +799,7 @@ const bulkRemove = async (ids = [], user = null) => {
 module.exports = {
   resolveAll,
   resolveById,
+  resolveLogsById,
   create,
   update,
   remove,

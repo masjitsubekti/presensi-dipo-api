@@ -386,6 +386,7 @@ model AttendanceLog {
   ipAddress            String?    @map("ip_address") @db.VarChar(50)
   status               String?    @db.VarChar(20)
   rejectionReason      String?    @map("rejection_reason") @db.VarChar(255)
+  note                 String?    @db.Text
   createdAt            DateTime?  @map("created_at") @db.Timestamp(0)
   createdBy            String?    @map("created_by") @db.VarChar(36)
   updatedAt            DateTime?  @updatedAt @map("updated_at") @db.Timestamp(0)

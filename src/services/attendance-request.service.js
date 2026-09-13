@@ -59,6 +59,7 @@ const selectAttendanceRequestDTOQuery = `
     ar.start_time AS startTime, ar.end_time AS endTime, ar.duration_type AS durationType,
     ar.reason, ar.file_path AS filePath, ar.status,
     ar.approved_by AS approvedBy, ar.approved_at AS approvedAt, ar.approval_note AS approvalNote,
+    au.name AS approverName,
     ar.created_by AS createdBy, ar.created_at AS createdAt,
     ar.updated_by AS updatedBy, ar.updated_at AS updatedAt,
     ar.deleted_at AS deletedAt, ar.is_deleted AS isDeleted,
@@ -71,6 +72,7 @@ const selectAttendanceRequestDTOQuery = `
   LEFT JOIN m_person p ON ar.person_id = p.id
   LEFT JOIN m_department d ON p.department_id = d.id
   LEFT JOIN m_position pos ON p.position_id = pos.id
+  LEFT JOIN auth_user au ON ar.approved_by = au.id
 `;
 
 const attendanceRequestSelect = {

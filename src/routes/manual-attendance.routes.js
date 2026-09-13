@@ -8,6 +8,7 @@ router.get('/', manualAttendanceController.index);
 router.post('/', manualAttendanceController.store);
 router.post('/bulk-delete', manualAttendanceController.bulkDestroy);
 router.get('/:id', manualAttendanceController.show);
+router.get('/:id/logs', manualAttendanceController.logs);
 router.put('/:id', manualAttendanceController.update);
 router.delete('/:id', manualAttendanceController.destroy);
 

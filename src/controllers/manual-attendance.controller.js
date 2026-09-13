@@ -29,6 +29,19 @@ exports.show = async (req, res, next) => {
     next(err);
   }
 };
+/**
+ * GET /v1/attendance-manual/:id/logs
+ * Returns audit trail logs for specific attendance record
+ */
+exports.logs = async (req, res, next) => {
+  try {
+    const data = await manualAttendanceService.resolveLogsById(req.params.id);
+    return response.success(res, data, 'Berhasil mengambil riwayat log presensi');
+  } catch (err) {
+    if (err.status) return response.error(res, err.message, err.status);
+    next(err);
+  }
+};
 
 /**
  * POST /v1/attendance-manual
