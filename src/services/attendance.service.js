@@ -865,16 +865,8 @@ const selectAttendanceDTOQuery = `
  * Resolve paginated attendance records from attendances table (matching institution.service.js pattern)
  * Supports params: pageNumber, pageSize, q, sortBy, sortType, personId, institutionId, departmentId, positionId, attendanceType, status, startDate, endDate
  */
-const resolveAll = async (params = {}, userId = null) => {
-  let ctxInstitutionId = null;
-  if (userId) {
-    const user = await prisma.authUser.findFirst({
-      where: { id: userId, isDeleted: false },
-    });
-    if (user && user.institutionId) {
-      ctxInstitutionId = Number(user.institutionId);
-    }
-  }
+const resolveAll = async (params = {}, userParam = null) => {
+  const ctxInstitutionId = userParam?.institutionId ? Number(userParam.institutionId) : null;
 
   const { pageNumber, pageSize, skip } = parsePaginationParams(params);
   const parseBoolean = (val, defaultVal = false) => {

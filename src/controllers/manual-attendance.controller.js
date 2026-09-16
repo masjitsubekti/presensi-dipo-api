@@ -9,7 +9,7 @@ const response = require('../helpers/response.helper');
  */
 exports.index = async (req, res, next) => {
   try {
-    const result = await manualAttendanceService.resolveAll(req.query, req.user?.id);
+    const result = await manualAttendanceService.resolveAll(req.query, req.user);
     return response.paginated(res, result);
   } catch (err) {
     next(err);

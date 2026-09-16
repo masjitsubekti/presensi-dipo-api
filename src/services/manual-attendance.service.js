@@ -120,16 +120,8 @@ const parseDateTime = (dateStr, timeStr) => {
 /**
  * Resolve paginated manual attendances list
  */
-const resolveAll = async (params = {}, userId = null) => {
-  let ctxInstitutionId = null;
-  if (userId) {
-    const user = await prisma.authUser.findFirst({
-      where: { id: userId, isDeleted: false },
-    });
-    if (user && user.institutionId) {
-      ctxInstitutionId = Number(user.institutionId);
-    }
-  }
+const resolveAll = async (params = {}, userParam = null) => {
+  const ctxInstitutionId = userParam?.institutionId ? Number(userParam.institutionId) : null;
 
   const { pageNumber, pageSize, skip } = parsePaginationParams(params);
   const parseBoolean = (val, defaultVal = false) => {

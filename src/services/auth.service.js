@@ -56,10 +56,15 @@ const login = async (username, password) => {
   const departmentName = personInfo?.department?.name || null;
   const positionName = personInfo?.position?.name || null;
 
+  const finalInstitutionId = user.institutionId ? Number(user.institutionId) : (personInfo?.institutionId ? Number(personInfo.institutionId) : null);
+  const finalPersonId = user.personId ? Number(user.personId) : null;
+
   const payload = {
     id: user.id,
     username: user.username,
     roleId: user.roleId,
+    institutionId: finalInstitutionId,
+    personId: finalPersonId,
   };
 
   const token = jwt.sign(payload, process.env.JWT_SECRET, {

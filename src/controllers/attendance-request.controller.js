@@ -10,7 +10,7 @@ const requestUpload = createUpload({ maxSizeMb: 1 });
 /** GET /v1/attendance-request */
 exports.index = async (req, res, next) => {
   try {
-    const result = await attendanceRequestService.resolveAll(req.query, req.user?.id);
+    const result = await attendanceRequestService.resolveAll(req.query, req.user);
     return response.paginated(res, result);
   } catch (err) { next(err); }
 };
