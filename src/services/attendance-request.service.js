@@ -266,10 +266,20 @@ const getById = async (id) => {
 };
 
 const create = async (data, user = null) => {
-  const institutionId = Number(data.institutionId ?? data.institution_id ?? user?.institutionId ?? 1);
   const personId = Number(data.personId ?? data.person_id ?? user?.personId);
-
   if (!personId) throw { status: 400, message: 'Person ID wajib diisi' };
+
+  let institutionId = data.institutionId ?? data.institution_id ?? user?.institutionId;
+  if (!isValidId(institutionId)) {
+    const person = await prisma.mPerson.findFirst({
+      where: { id: personId, isDeleted: false },
+      select: { institutionId: true },
+    });
+    if (person && person.institutionId) {
+      institutionId = person.institutionId;
+    }
+  }
+  institutionId = isValidId(institutionId) ? Number(institutionId) : null;
 
   const attendanceTypeId = Number(data.attendanceTypeId ?? data.attendance_type_id ?? data.leaveTypeId ?? data.leave_type_id);
 
