@@ -1,6 +1,6 @@
 require('dotenv').config();
 const prisma = require('../config/prisma');
-const { paginate, parsePaginationParams } = require('../helpers/pagination.helper');
+const { paginate, parsePaginationParams, isValidId } = require('../helpers/pagination.helper');
 const { v4: uuidv4 } = require('uuid');
 const { checkWithinRadius } = require('../utils/haversine');
 const {
@@ -909,7 +909,7 @@ const resolveAll = async (params = {}, userId = null) => {
   }
 
   // Institution scope filter (allow filter by institutionId or scope to user's institution if assigned)
-  if (institutionId) {
+  if (isValidId(institutionId)) {
     conditions.push('a.institution_id = ?');
     values.push(Number(institutionId));
   } else if (ctxInstitutionId) {
@@ -917,17 +917,17 @@ const resolveAll = async (params = {}, userId = null) => {
     values.push(ctxInstitutionId);
   }
 
-  if (personId) {
+  if (isValidId(personId)) {
     conditions.push('a.person_id = ?');
     values.push(Number(personId));
   }
 
-  if (departmentId) {
+  if (isValidId(departmentId)) {
     conditions.push('p.department_id = ?');
     values.push(Number(departmentId));
   }
 
-  if (positionId) {
+  if (isValidId(positionId)) {
     conditions.push('p.position_id = ?');
     values.push(Number(positionId));
   }

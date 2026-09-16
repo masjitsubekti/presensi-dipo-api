@@ -1,5 +1,5 @@
 const prisma = require('../config/prisma');
-const { paginate, parsePaginationParams } = require('../helpers/pagination.helper');
+const { paginate, parsePaginationParams, isValidId } = require('../helpers/pagination.helper');
 const moment = require('moment-timezone');
 const { APP_TIMEZONE, nowInTz } = require('../utils/timezone');
 const storage = require('../storage/storage.service');
@@ -169,7 +169,7 @@ const resolveAll = async (params = {}, userId = null) => {
     values.push('manual');
   }
 
-  if (institutionId) {
+  if (isValidId(institutionId)) {
     conditions.push('a.institution_id = ?');
     values.push(Number(institutionId));
   } else if (ctxInstitutionId) {
@@ -177,17 +177,17 @@ const resolveAll = async (params = {}, userId = null) => {
     values.push(ctxInstitutionId);
   }
 
-  if (personId) {
+  if (isValidId(personId)) {
     conditions.push('a.person_id = ?');
     values.push(Number(personId));
   }
 
-  if (departmentId) {
+  if (isValidId(departmentId)) {
     conditions.push('p.department_id = ?');
     values.push(Number(departmentId));
   }
 
-  if (positionId) {
+  if (isValidId(positionId)) {
     conditions.push('p.position_id = ?');
     values.push(Number(positionId));
   }
@@ -197,7 +197,7 @@ const resolveAll = async (params = {}, userId = null) => {
     values.push(attendanceType);
   }
 
-  if (attendanceTypeId) {
+  if (isValidId(attendanceTypeId)) {
     conditions.push('a.attendance_type_id = ?');
     values.push(Number(attendanceTypeId));
   }

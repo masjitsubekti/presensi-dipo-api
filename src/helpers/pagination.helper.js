@@ -68,9 +68,17 @@ const parseSortParams = (query = {}, defaultSortBy = 'createdAt', sortMap = {}) 
   return { sortField, sortType };
 };
 
+/**
+ * Check if a query parameter is a valid numeric ID (positive integer)
+ * @param {any} val
+ * @returns {boolean}
+ */
+const isValidId = (val) => val !== null && val !== undefined && val !== '' && val !== '-' && !isNaN(Number(val)) && Number(val) > 0;
+
 module.exports = {
   paginate,
   parsePaginationParams,
   parseSortParams,
+  isValidId,
   DEFAULT_PAGE_SIZE,
 };

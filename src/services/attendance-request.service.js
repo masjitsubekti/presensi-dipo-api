@@ -1,5 +1,5 @@
 const prisma = require('../config/prisma');
-const { paginate, parsePaginationParams } = require('../helpers/pagination.helper');
+const { paginate, parsePaginationParams, isValidId } = require('../helpers/pagination.helper');
 const storage = require('../storage/storage.service');
 
 /**
@@ -157,7 +157,7 @@ const resolveAll = async (params = {}, userId = null) => {
   const conditions = ['ar.is_deleted = 0'];
   const values = [];
 
-  if (institutionId) {
+  if (isValidId(institutionId)) {
     conditions.push('ar.institution_id = ?');
     values.push(Number(institutionId));
   } else if (ctxInstitutionId) {
@@ -165,22 +165,22 @@ const resolveAll = async (params = {}, userId = null) => {
     values.push(ctxInstitutionId);
   }
 
-  if (personId) {
+  if (isValidId(personId)) {
     conditions.push('ar.person_id = ?');
     values.push(Number(personId));
   }
 
-  if (departmentId) {
+  if (isValidId(departmentId)) {
     conditions.push('p.department_id = ?');
     values.push(Number(departmentId));
   }
 
-  if (positionId) {
+  if (isValidId(positionId)) {
     conditions.push('p.position_id = ?');
     values.push(Number(positionId));
   }
 
-  if (attendanceTypeId) {
+  if (isValidId(attendanceTypeId)) {
     conditions.push('ar.attendance_type_id = ?');
     values.push(Number(attendanceTypeId));
   }
@@ -196,13 +196,14 @@ const resolveAll = async (params = {}, userId = null) => {
     values.push(status);
   }
 
-  if (startDate) {
-    conditions.push('ar.start_date >= ?');
+  if (startDate && endDate) {
+    conditions.push('ar.start_date <= ? AND ar.end_date >= ?');
+    values.push(`${endDate}`, `${startDate}`);
+  } else if (startDate) {
+    conditions.push('ar.end_date >= ?');
     values.push(`${startDate}`);
-  }
-
-  if (endDate) {
-    conditions.push('ar.end_date <= ?');
+  } else if (endDate) {
+    conditions.push('ar.start_date <= ?');
     values.push(`${endDate}`);
   }
 
