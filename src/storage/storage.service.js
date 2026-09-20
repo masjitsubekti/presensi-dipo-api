@@ -46,23 +46,30 @@ const getMimeType = (filePath = '', fallback = 'image/jpeg') => {
   return mimeMap[ext] || fallback;
 };
 
+let _cachedStorageDriver = null;
+
 /**
  * Get active storage configuration (reads storageDriver from app_config or env, credentials strictly from .env)
  */
 const getStorageConfig = async () => {
   let driver = process.env.STORAGE_DRIVER || 'local';
 
-  try {
-    const configResult = await prisma.$queryRawUnsafe(`
-      SELECT storage_driver AS storageDriver
-      FROM app_config 
-      LIMIT 1
-    `);
-    if (configResult && configResult[0] && configResult[0].storageDriver) {
-      driver = configResult[0].storageDriver;
+  if (_cachedStorageDriver) {
+    driver = _cachedStorageDriver;
+  } else {
+    try {
+      const configResult = await prisma.$queryRawUnsafe(`
+        SELECT storage_driver AS storageDriver
+        FROM app_config 
+        LIMIT 1
+      `);
+      if (configResult && configResult[0] && configResult[0].storageDriver) {
+        driver = configResult[0].storageDriver;
+        _cachedStorageDriver = driver;
+      }
+    } catch (_err) {
+      // Fallback to process.env.STORAGE_DRIVER
     }
-  } catch (_err) {
-    // Fallback to process.env.STORAGE_DRIVER
   }
 
   return {
@@ -264,11 +271,19 @@ const getFileUrl = (rawFilePath) => {
   return `${baseUrl}/api/v1/files?path=${encodeURIComponent(relativePath)}`;
 };
 
+/**
+ * Clear or update the cached storage driver
+ */
+const clearStorageCache = (newDriver = null) => {
+  _cachedStorageDriver = newDriver;
+};
+
 module.exports = {
   uploadFile,
   getFileStream,
   deleteFile,
   getFileUrl,
+  clearStorageCache,
   // Alias functions for backward compatibility
   save: uploadFile,
   remove: deleteFile,

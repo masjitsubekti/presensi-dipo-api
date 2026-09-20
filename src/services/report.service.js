@@ -43,6 +43,7 @@ const evaluatePersonSummaryForPeriod = ({
   let countAlpha = 0;
   let countLibur = 0;
   let countIzinCuti = 0;
+  let countHariKerja = 0;
 
   const days = [];
   const curDate = new Date(`${startDateStr}T00:00:00`);
@@ -121,7 +122,9 @@ const evaluatePersonSummaryForPeriod = ({
       keterangan = 'LIBUR';
       categoryClass = 'libur';
       countLibur++;
-    } else if (matchedRequest) {
+    } else {
+      countHariKerja++;
+      if (matchedRequest) {
       const typeCode = (matchedRequest.attendanceTypeCode || 'IZIN').trim().toUpperCase();
       const typeName = (matchedRequest.attendanceTypeName || '').trim().toUpperCase();
       const typeCategory = (matchedRequest.attendanceTypeCategory || '').trim().toUpperCase();
@@ -244,6 +247,7 @@ const evaluatePersonSummaryForPeriod = ({
         }
       }
     }
+  }
 
     days.push({
       date: formatDateDDMMYYYY(currentDate),
@@ -266,6 +270,7 @@ const evaluatePersonSummaryForPeriod = ({
   }
 
   return {
+    countHariKerja,
     countHadir,
     countTerlambat,
     totalLateMinutes,
@@ -464,6 +469,8 @@ const getEmployeeRecap = async (params = {}) => {
     },
     summary: {
       daysInMonth: evaluated.days.length,
+      hariKerja: evaluated.countHariKerja,
+      countHariKerja: evaluated.countHariKerja,
       totalLateMinutes: evaluated.totalLateMinutes,
       totalLateHours,
       totalLateRemainingMinutes,
@@ -554,6 +561,7 @@ const getEmployeeSummary = async (params = {}) => {
       endDate: endDateStr,
       summary: {
         totalEmployee: 0,
+        totalHariKerja: 0,
         totalHadir: 0,
         totalTerlambat: 0,
         totalLateMinutes: 0,
@@ -702,6 +710,8 @@ const getEmployeeSummary = async (params = {}) => {
       institutionName: person.institutionName || '-',
       departmentName: person.departmentName || '-',
       positionName: person.positionName || '-',
+      countHariKerja: summary.countHariKerja,
+      totalHariKerja: summary.countHariKerja,
       countHadir: summary.countHadir,
       countTerlambat: summary.countTerlambat,
       totalLateMinutes: lateMins,
@@ -728,6 +738,8 @@ const getEmployeeSummary = async (params = {}) => {
     institutionName: 'institutionName',
     departmentName: 'departmentName',
     positionName: 'positionName',
+    countHariKerja: 'countHariKerja',
+    totalHariKerja: 'countHariKerja',
     countHadir: 'countHadir',
     countTerlambat: 'countTerlambat',
     totalLateMinutes: 'totalLateMinutes',
@@ -762,6 +774,7 @@ const getEmployeeSummary = async (params = {}) => {
   // 8. Total summary aggregation
   const totalSummary = evaluatedItems.reduce(
     (acc, item) => {
+      acc.totalHariKerja += item.countHariKerja;
       acc.totalHadir += item.countHadir;
       acc.totalTerlambat += item.countTerlambat;
       acc.totalLateMinutes += item.totalLateMinutes;
@@ -778,6 +791,7 @@ const getEmployeeSummary = async (params = {}) => {
     },
     {
       totalEmployee: total,
+      totalHariKerja: 0,
       totalHadir: 0,
       totalTerlambat: 0,
       totalLateMinutes: 0,

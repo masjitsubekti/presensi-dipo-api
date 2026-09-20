@@ -4,6 +4,7 @@ const { createUpload, uploadFile } = require('../middleware/upload.middleware');
 const attendanceRequestService = require('../services/attendance-request.service');
 const response = require('../helpers/response.helper');
 const storage = require('../storage/storage.service');
+const appConfigService = require('../services/app-config.service');
 
 const requestUpload = createUpload({ maxSizeMb: 1 });
 
@@ -32,13 +33,16 @@ exports.store = [
   async (req, res, next) => {
     try {
       if (req.file) {
-        req.body.filePath = await storage.uploadFile(
-          req.file.buffer,
-          req.file.mimetype,
-          'request',
-          'request',
-          req.file.originalname
-        );
+        const config = await appConfigService.getAppConfig();
+        if (config?.saveAttendancePhoto) {
+          req.body.filePath = await storage.uploadFile(
+            req.file.buffer,
+            req.file.mimetype,
+            'request',
+            'request',
+            req.file.originalname
+          );
+        }
       }
 
       const data = await attendanceRequestService.create(req.body, req.user);
@@ -56,13 +60,16 @@ exports.update = [
   async (req, res, next) => {
     try {
       if (req.file) {
-        req.body.filePath = await storage.uploadFile(
-          req.file.buffer,
-          req.file.mimetype,
-          'request',
-          'request',
-          req.file.originalname
-        );
+        const config = await appConfigService.getAppConfig();
+        if (config?.saveAttendancePhoto) {
+          req.body.filePath = await storage.uploadFile(
+            req.file.buffer,
+            req.file.mimetype,
+            'request',
+            'request',
+            req.file.originalname
+          );
+        }
       }
 
       const data = await attendanceRequestService.update(req.params.id, req.body, req.user);

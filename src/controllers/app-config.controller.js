@@ -22,3 +22,14 @@ exports.update = async (req, res, next) => {
     next(err);
   }
 };
+
+/** POST /v1/app-config/upload */
+exports.uploadLogo = async (req, res, next) => {
+  try {
+    const data = await appConfigService.uploadLogo(req.file);
+    return response.success(res, data, 'Logo berhasil diunggah');
+  } catch (err) {
+    if (err.status) return response.error(res, err.message, err.status);
+    next(err);
+  }
+};
