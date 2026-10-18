@@ -18,6 +18,7 @@ const RAW_SORT_MAP = {
   updated_at: 'p.updated_at',
   personName: 'per.name',
   shiftName: 's.name',
+  institutionName: 'i.name',
 };
 
 const selectWorkShiftPatternDTOQuery = `
@@ -26,10 +27,12 @@ const selectWorkShiftPatternDTOQuery = `
     p.created_by AS createdBy, p.created_at AS createdAt, 
     p.updated_by AS updatedBy, p.updated_at AS updatedAt, p.deleted_at AS deletedAt, 
     p.is_deleted AS isDeleted,
-    p.person_id AS personId, per.nip AS personNip, per.name AS personName,
+    p.person_id AS personId, per.nip AS personNip, per.name AS personName, per.institution_id AS institutionId,
+    i.name AS institutionName,
     p.shift_id AS shiftId, s.code AS shiftCode, s.name AS shiftName
   FROM work_shift_pattern p
   LEFT JOIN m_person per ON p.person_id = per.id
+  LEFT JOIN m_institution i ON per.institution_id = i.id
   LEFT JOIN work_shift s ON p.shift_id = s.id
 `;
 
@@ -46,6 +49,7 @@ const resolveAll = async (params = {}) => {
   const keyword = params.q ?? params.search ?? null;
   const personId = params.personId ?? params.person_id ?? null;
   const shiftId = params.shiftId ?? params.shift_id ?? null;
+  const institutionId = params.institutionId ?? params.institution_id ?? null;
   const ignorePaging = parseBoolean(params.ignorePaging, false);
 
   const sortBy = RAW_SORT_MAP[params.sortBy] ?? 'p.created_at';
@@ -53,6 +57,11 @@ const resolveAll = async (params = {}) => {
 
   const conditions = ['p.is_deleted = 0'];
   const values = [];
+
+  if (institutionId) {
+    conditions.push('per.institution_id = ?');
+    values.push(Number(institutionId));
+  }
 
   if (personId) {
     conditions.push('p.person_id = ?');
@@ -65,7 +74,7 @@ const resolveAll = async (params = {}) => {
   }
 
   if (keyword) {
-    conditions.push('CONCAT(per.nip, per.name, s.code, s.name) LIKE ?');
+    conditions.push('CONCAT(COALESCE(per.nip, ""), COALESCE(per.name, ""), COALESCE(s.code, ""), COALESCE(s.name, ""), COALESCE(i.name, "")) LIKE ?');
     values.push(`%${keyword}%`);
   }
 
@@ -95,9 +104,15 @@ const resolveAll = async (params = {}) => {
 const getAll = async (params = {}) => {
   const personId = params.personId ?? params.person_id ?? null;
   const shiftId = params.shiftId ?? params.shift_id ?? null;
+  const institutionId = params.institutionId ?? params.institution_id ?? null;
 
   const conditions = ['p.is_deleted = 0'];
   const values = [];
+
+  if (institutionId) {
+    conditions.push('per.institution_id = ?');
+    values.push(Number(institutionId));
+  }
 
   if (personId) {
     conditions.push('p.person_id = ?');
@@ -113,6 +128,7 @@ const getAll = async (params = {}) => {
   const dataSql = `
     ${selectWorkShiftPatternDTOQuery}
     WHERE ${whereSql}
+
     ORDER BY p.effective_from DESC
   `;
 

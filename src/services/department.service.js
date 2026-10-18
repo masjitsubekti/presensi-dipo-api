@@ -50,7 +50,7 @@ const parseBoolean = (val, defaultVal = false) => {
 const resolveAll = async (params = {}) => {
   const { pageNumber, pageSize, skip } = parsePaginationParams(params);
   const keyword = params.q ?? params.search ?? null;
-  const institutionId = params.institutionId ?? params.institution_id ?? null;
+  const institutionId = params.institutionId ? Number(params.institutionId) : null;
   const ignorePaging = parseBoolean(params.ignorePaging, false);
 
   const sortBy = RAW_SORT_MAP[params.sortBy] ?? 'd.created_at';
@@ -60,12 +60,12 @@ const resolveAll = async (params = {}) => {
   const values = [];
 
   if (institutionId) {
-    conditions.push('d.institution_id = ?');
-    values.push(Number(institutionId));
+    conditions.push('(d.institution_id = ? OR d.institution_id IS NULL)');
+    values.push(institutionId);
   }
 
   if (keyword) {
-    conditions.push('CONCAT(d.code, d.name, i.code, i.name) LIKE ?');
+    conditions.push('CONCAT(d.code, d.name, COALESCE(i.code, ""), COALESCE(i.name, "")) LIKE ?');
     values.push(`%${keyword}%`);
   }
 
@@ -93,13 +93,14 @@ const resolveAll = async (params = {}) => {
 };
 
 const getAll = async (params = {}) => {
-  const institutionId = params.institutionId ?? params.institution_id ?? null;
+  const institutionId = params.institutionId ? Number(params.institutionId) : null;
+
   const conditions = ['d.is_deleted = 0'];
   const values = [];
 
   if (institutionId) {
-    conditions.push('d.institution_id = ?');
-    values.push(Number(institutionId));
+    conditions.push('(d.institution_id = ? OR d.institution_id IS NULL)');
+    values.push(institutionId);
   }
 
   const whereSql = conditions.join(' AND ');
@@ -136,7 +137,7 @@ const create = async (data, user = null) => {
     data: {
       code: data.code,
       name: data.name,
-      institutionId: data.institutionId ?? data.institution_id ? Number(data.institutionId ?? data.institution_id) : null,
+      institutionId: data.institutionId ? Number(data.institutionId) : null,
       createdAt: new Date(),
       createdBy: user?.id ?? null,
     },
@@ -151,7 +152,7 @@ const update = async (id, data, user = null) => {
     data: {
       code: data.code,
       name: data.name,
-      institutionId: data.institutionId ?? data.institution_id ? Number(data.institutionId ?? data.institution_id) : null,
+      institutionId: data.institutionId ? Number(data.institutionId) : null,
       updatedAt: new Date(),
       updatedBy: user?.id ?? null,
     },
