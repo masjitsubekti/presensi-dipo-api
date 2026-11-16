@@ -73,7 +73,7 @@ const resolveAll = async (params = {}) => {
   const values = [];
 
   if (institutionId) {
-    conditions.push('h.institution_id = ?');
+    conditions.push('(h.institution_id = ? OR h.institution_id IS NULL OR h.is_national = 1)');
     values.push(Number(institutionId));
   }
 
@@ -135,7 +135,7 @@ const getAll = async (params = {}) => {
   const values = [];
 
   if (institutionId) {
-    conditions.push('h.institution_id = ?');
+    conditions.push('(h.institution_id = ? OR h.institution_id IS NULL OR h.is_national = 1)');
     values.push(Number(institutionId));
   }
 

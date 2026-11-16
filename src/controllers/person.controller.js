@@ -3,10 +3,27 @@ const { validateRequest } = require('../helpers/validator.helper');
 const personService = require('../services/person.service');
 const response = require('../helpers/response.helper');
 
+/**
+ * Helper to resolve institutionId from explicit parameter (query/body) first, fallback to user session
+ */
+const resolveInstitutionId = (user, explicitId) => {
+  if (explicitId !== undefined && explicitId !== null && explicitId !== '') {
+    return Number(explicitId);
+  }
+  if (user?.institutionId) {
+    return Number(user.institutionId);
+  }
+  return null;
+};
+
 /** GET /v1/master/person */
 exports.index = async (req, res, next) => {
   try {
-    const result = await personService.resolveAll(req.query);
+    const params = {
+      ...req.query,
+      institutionId: resolveInstitutionId(req.user, req.query.institutionId ?? req.query.institution_id),
+    };
+    const result = await personService.resolveAll(params);
     return response.paginated(res, result);
   } catch (err) { next(err); }
 };
@@ -14,7 +31,11 @@ exports.index = async (req, res, next) => {
 /** GET /v1/master/person/all */
 exports.all = async (req, res, next) => {
   try {
-    const data = await personService.getAll(req.query);
+    const params = {
+      ...req.query,
+      institutionId: resolveInstitutionId(req.user, req.query.institutionId ?? req.query.institution_id),
+    };
+    const data = await personService.getAll(params);
     return response.success(res, data);
   } catch (err) { next(err); }
 };
@@ -38,7 +59,12 @@ exports.store = async (req, res, next) => {
       body('email').optional({ nullable: true }).isEmail().withMessage('Format email tidak valid'),
     ]);
 
-    const data = await personService.create(req.body, req.user);
+    const payload = {
+      ...req.body,
+      institutionId: resolveInstitutionId(req.user, req.body.institutionId ?? req.body.institution_id),
+    };
+
+    const data = await personService.create(payload, req.user);
     return response.success(res, data, 'Person berhasil dibuat', 201);
   } catch (err) {
     if (err.status) return response.error(res, err.message, err.status, err.errors);
@@ -54,7 +80,19 @@ exports.update = async (req, res, next) => {
       body('email').optional({ nullable: true }).isEmail().withMessage('Format email tidak valid'),
     ]);
 
-    const data = await personService.update(req.params.id, req.body, req.user);
+    const current = await personService.getById(req.params.id);
+
+    // Cegah Admin Sekolah mengubah data milik sekolah lain
+    if (current.institutionId && req.user?.institutionId && Number(current.institutionId) !== Number(req.user.institutionId)) {
+      return response.error(res, 'Anda tidak memiliki hak akses untuk mengubah data pegawai institusi lain', 403);
+    }
+
+    const payload = {
+      ...req.body,
+      institutionId: resolveInstitutionId(req.user, req.body.institutionId ?? req.body.institution_id) ?? current.institutionId,
+    };
+
+    const data = await personService.update(req.params.id, payload, req.user);
     return response.success(res, data, 'Person berhasil diubah');
   } catch (err) {
     if (err.status) return response.error(res, err.message, err.status, err.errors);
@@ -65,6 +103,13 @@ exports.update = async (req, res, next) => {
 /** DELETE /v1/master/person/:id */
 exports.destroy = async (req, res, next) => {
   try {
+    const current = await personService.getById(req.params.id);
+
+    // Cegah Admin Sekolah menghapus data milik sekolah lain
+    if (current.institutionId && req.user?.institutionId && Number(current.institutionId) !== Number(req.user.institutionId)) {
+      return response.error(res, 'Anda tidak memiliki hak akses untuk menghapus data pegawai institusi lain', 403);
+    }
+
     await personService.remove(req.params.id);
     return response.success(res, null, 'Person berhasil dihapus');
   } catch (err) {
@@ -72,3 +117,4 @@ exports.destroy = async (req, res, next) => {
     next(err);
   }
 };
+

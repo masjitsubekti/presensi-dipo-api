@@ -68,7 +68,7 @@ const resolveAll = async (params = {}) => {
   const values = [];
 
   if (institutionId) {
-    conditions.push('s.institution_id = ?');
+    conditions.push('(s.institution_id = ? OR s.institution_id IS NULL)');
     values.push(Number(institutionId));
   }
 
@@ -78,7 +78,7 @@ const resolveAll = async (params = {}) => {
   }
 
   if (keyword) {
-    conditions.push('CONCAT(s.code, s.name, i.name) LIKE ?');
+    conditions.push('CONCAT(s.code, s.name, COALESCE(i.name, "")) LIKE ?');
     values.push(`%${keyword}%`);
   }
 
@@ -116,7 +116,7 @@ const getAll = async (params = {}) => {
   const values = [];
 
   if (institutionId) {
-    conditions.push('s.institution_id = ?');
+    conditions.push('(s.institution_id = ? OR s.institution_id IS NULL)');
     values.push(Number(institutionId));
   }
 
@@ -176,7 +176,7 @@ const create = async (data, user = null) => {
         id: shiftId,
         code: data.code,
         name: data.name,
-        institutionId: data.institutionId ?? data.institution_id ? Number(data.institutionId ?? data.institution_id) : null,
+        institutionId: data.institutionId ? Number(data.institutionId) : null,
         isActive: parseBoolean(data.isActive ?? data.is_active, true),
         createdAt: now,
         createdBy: userId,
@@ -220,7 +220,7 @@ const update = async (id, data, user = null) => {
       data: {
         code: data.code,
         name: data.name,
-        institutionId: data.institutionId ?? data.institution_id ? Number(data.institutionId ?? data.institution_id) : null,
+        institutionId: data.institutionId ? Number(data.institutionId) : null,
         isActive: parseBoolean(data.isActive ?? data.is_active, true),
         updatedAt: now,
         updatedBy: userId,

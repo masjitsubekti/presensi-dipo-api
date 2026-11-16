@@ -107,7 +107,7 @@ const resolveAll = async (params = {}) => {
   }
 
   if (keyword) {
-    conditions.push('CONCAT(p.nip, p.name, p.email, p.phone, i.name, pos.name, dept.name) LIKE ?');
+    conditions.push('CONCAT(COALESCE(p.nip, ""), COALESCE(p.name, ""), COALESCE(p.email, ""), COALESCE(p.phone, ""), COALESCE(i.name, ""), COALESCE(pos.name, ""), COALESCE(dept.name, "")) LIKE ?');
     values.push(`%${keyword}%`);
   }
 
@@ -184,7 +184,7 @@ const create = async (data, user = null) => {
       phone: data.phone ?? null,
       email: data.email ?? null,
       address: data.address ?? null,
-      institutionId: data.institutionId ?? data.institution_id ? Number(data.institutionId ?? data.institution_id) : null,
+      institutionId: data.institutionId ? Number(data.institutionId) : null,
       positionId: data.positionId ?? data.position_id ? Number(data.positionId ?? data.position_id) : null,
       departmentId: data.departmentId ?? data.department_id ? Number(data.departmentId ?? data.department_id) : null,
       status: data.status ?? 'aktif',
@@ -209,7 +209,7 @@ const update = async (id, data, user = null) => {
       phone: data.phone ?? null,
       email: data.email ?? null,
       address: data.address ?? null,
-      institutionId: data.institutionId ?? data.institution_id ? Number(data.institutionId ?? data.institution_id) : null,
+      institutionId: data.institutionId ? Number(data.institutionId) : null,
       positionId: data.positionId ?? data.position_id ? Number(data.positionId ?? data.position_id) : null,
       departmentId: data.departmentId ?? data.department_id ? Number(data.departmentId ?? data.department_id) : null,
       status: data.status ?? 'aktif',

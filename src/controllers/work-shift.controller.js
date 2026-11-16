@@ -3,10 +3,27 @@ const { validateRequest } = require('../helpers/validator.helper');
 const workShiftService = require('../services/work-shift.service');
 const response = require('../helpers/response.helper');
 
+/**
+ * Helper to resolve institutionId from explicit parameter (query/body) first, fallback to user session
+ */
+const resolveInstitutionId = (user, explicitId) => {
+  if (explicitId !== undefined && explicitId !== null && explicitId !== '') {
+    return Number(explicitId);
+  }
+  if (user?.institutionId) {
+    return Number(user.institutionId);
+  }
+  return null;
+};
+
 /** GET /v1/master/work-shift */
 exports.index = async (req, res, next) => {
   try {
-    const result = await workShiftService.resolveAll(req.query);
+    const params = {
+      ...req.query,
+      institutionId: resolveInstitutionId(req.user, req.query.institutionId ?? req.query.institution_id),
+    };
+    const result = await workShiftService.resolveAll(params);
     return response.paginated(res, result);
   } catch (err) { next(err); }
 };
@@ -14,7 +31,11 @@ exports.index = async (req, res, next) => {
 /** GET /v1/master/work-shift/all */
 exports.all = async (req, res, next) => {
   try {
-    const data = await workShiftService.getAll(req.query);
+    const params = {
+      ...req.query,
+      institutionId: resolveInstitutionId(req.user, req.query.institutionId ?? req.query.institution_id),
+    };
+    const data = await workShiftService.getAll(params);
     return response.success(res, data);
   } catch (err) { next(err); }
 };
@@ -39,7 +60,12 @@ exports.store = async (req, res, next) => {
       body('details').optional().isArray().withMessage('Details harus berupa array'),
     ]);
 
-    const data = await workShiftService.create(req.body, req.user);
+    const payload = {
+      ...req.body,
+      institutionId: resolveInstitutionId(req.user, req.body.institutionId ?? req.body.institution_id),
+    };
+
+    const data = await workShiftService.create(payload, req.user);
     return response.success(res, data, 'Master Jam Kerja berhasil dibuat', 201);
   } catch (err) {
     if (err.status) return response.error(res, err.message, err.status, err.errors);
@@ -56,7 +82,24 @@ exports.update = async (req, res, next) => {
       body('details').optional().isArray().withMessage('Details harus berupa array'),
     ]);
 
-    const data = await workShiftService.update(req.params.id, req.body, req.user);
+    const current = await workShiftService.getById(req.params.id);
+
+    // Cegah Admin Sekolah mengubah data Global
+    if (!current.institutionId && req.user?.institutionId) {
+      return response.error(res, 'Jam kerja global hanya dapat diubah oleh Admin Yayasan / Superadmin', 403);
+    }
+
+    // Cegah Admin Sekolah mengubah data milik sekolah lain
+    if (current.institutionId && req.user?.institutionId && Number(current.institutionId) !== Number(req.user.institutionId)) {
+      return response.error(res, 'Anda tidak memiliki hak akses untuk mengubah jam kerja institusi lain', 403);
+    }
+
+    const payload = {
+      ...req.body,
+      institutionId: resolveInstitutionId(req.user, req.body.institutionId ?? req.body.institution_id),
+    };
+
+    const data = await workShiftService.update(req.params.id, payload, req.user);
     return response.success(res, data, 'Master Jam Kerja berhasil diubah');
   } catch (err) {
     if (err.status) return response.error(res, err.message, err.status, err.errors);
@@ -67,6 +110,18 @@ exports.update = async (req, res, next) => {
 /** DELETE /v1/master/work-shift/:id */
 exports.destroy = async (req, res, next) => {
   try {
+    const current = await workShiftService.getById(req.params.id);
+
+    // Cegah Admin Sekolah menghapus data Global
+    if (!current.institutionId && req.user?.institutionId) {
+      return response.error(res, 'Jam kerja global hanya dapat dihapus oleh Admin Yayasan / Superadmin', 403);
+    }
+
+    // Cegah Admin Sekolah menghapus data milik sekolah lain
+    if (current.institutionId && req.user?.institutionId && Number(current.institutionId) !== Number(req.user.institutionId)) {
+      return response.error(res, 'Anda tidak memiliki hak akses untuk menghapus jam kerja institusi lain', 403);
+    }
+
     await workShiftService.remove(req.params.id);
     return response.success(res, null, 'Master Jam Kerja berhasil dihapus');
   } catch (err) {
@@ -74,3 +129,4 @@ exports.destroy = async (req, res, next) => {
     next(err);
   }
 };
+

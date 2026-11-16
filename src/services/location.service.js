@@ -70,7 +70,7 @@ const resolveAll = async (params = {}) => {
   }
 
   if (keyword) {
-    conditions.push('CONCAT(l.code, l.name, i.code, i.name) LIKE ?');
+    conditions.push('CONCAT(l.code, l.name, COALESCE(i.code, ""), COALESCE(i.name, "")) LIKE ?');
     values.push(`%${keyword}%`);
   }
 
