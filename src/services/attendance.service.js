@@ -900,13 +900,13 @@ const resolveAll = async (params = {}, userParam = null) => {
     values.push(mode);
   }
 
-  // Institution scope filter (allow filter by institutionId or scope to user's institution if assigned)
-  if (isValidId(institutionId)) {
-    conditions.push('a.institution_id = ?');
-    values.push(Number(institutionId));
-  } else if (ctxInstitutionId) {
+  // Institution scope filter (lock to user's institution if assigned, otherwise allow filter by institutionId)
+  if (ctxInstitutionId) {
     conditions.push('a.institution_id = ?');
     values.push(ctxInstitutionId);
+  } else if (isValidId(institutionId)) {
+    conditions.push('a.institution_id = ?');
+    values.push(Number(institutionId));
   }
 
   if (isValidId(personId)) {

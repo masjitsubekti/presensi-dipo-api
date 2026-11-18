@@ -16,14 +16,17 @@ const getEmployeeRecap = async (req, res, next) => {
       });
     }
 
-    const data = await reportService.getEmployeeRecap({
-      personId: targetPersonId,
-      month,
-      year,
-      startDate: startDate || start_date,
-      endDate: endDate || end_date,
-      institutionId: institutionId || institution_id,
-    });
+    const data = await reportService.getEmployeeRecap(
+      {
+        personId: targetPersonId,
+        month,
+        year,
+        startDate: startDate || start_date,
+        endDate: endDate || end_date,
+        institutionId: institutionId || institution_id,
+      },
+      req.user
+    );
 
     return res.status(200).json({
       status: true,
@@ -31,13 +34,19 @@ const getEmployeeRecap = async (req, res, next) => {
       data,
     });
   } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({
+        status: false,
+        message: error.message,
+      });
+    }
     next(error);
   }
 };
 
 const getEmployeeSummary = async (req, res, next) => {
   try {
-    const data = await reportService.getEmployeeSummary(req.query);
+    const data = await reportService.getEmployeeSummary(req.query, req.user);
 
     return res.status(200).json({
       status: true,
@@ -45,6 +54,12 @@ const getEmployeeSummary = async (req, res, next) => {
       data,
     });
   } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({
+        status: false,
+        message: error.message,
+      });
+    }
     next(error);
   }
 };

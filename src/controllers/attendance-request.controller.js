@@ -20,6 +20,11 @@ exports.index = async (req, res, next) => {
 exports.show = async (req, res, next) => {
   try {
     const data = await attendanceRequestService.resolveById(req.params.id);
+
+    if (req.user?.institutionId && Number(data.institutionId) !== Number(req.user.institutionId)) {
+      return response.error(res, 'Anda tidak memiliki hak akses untuk melihat pengajuan izin institusi lain', 403);
+    }
+
     return response.success(res, data);
   } catch (err) {
     if (err.status) return response.error(res, err.message, err.status);
@@ -72,6 +77,11 @@ exports.update = [
         }
       }
 
+      const current = await attendanceRequestService.getById(req.params.id);
+      if (req.user?.institutionId && Number(current.institutionId) !== Number(req.user.institutionId)) {
+        return response.error(res, 'Anda tidak memiliki hak akses untuk mengubah pengajuan izin institusi lain', 403);
+      }
+
       const data = await attendanceRequestService.update(req.params.id, req.body, req.user);
       return response.success(res, data, 'Pengajuan izin berhasil diubah');
     } catch (err) {
@@ -88,6 +98,11 @@ exports.updateStatus = async (req, res, next) => {
       body('status').notEmpty().isIn(['pending', 'approved', 'rejected', 'cancelled']).withMessage('Status tidak valid'),
     ]);
 
+    const current = await attendanceRequestService.getById(req.params.id);
+    if (req.user?.institutionId && Number(current.institutionId) !== Number(req.user.institutionId)) {
+      return response.error(res, 'Anda tidak memiliki hak akses untuk memproses pengajuan izin institusi lain', 403);
+    }
+
     const approvalNote = req.body.approvalNote ?? req.body.approval_note ?? null;
     const data = await attendanceRequestService.updateStatus(req.params.id, req.body.status, req.user, approvalNote);
     return response.success(res, data, `Status pengajuan berhasil diubah menjadi ${req.body.status}`);
@@ -100,6 +115,11 @@ exports.updateStatus = async (req, res, next) => {
 /** DELETE /v1/attendance-request/:id */
 exports.destroy = async (req, res, next) => {
   try {
+    const current = await attendanceRequestService.getById(req.params.id);
+    if (req.user?.institutionId && Number(current.institutionId) !== Number(req.user.institutionId)) {
+      return response.error(res, 'Anda tidak memiliki hak akses untuk menghapus pengajuan izin institusi lain', 403);
+    }
+
     await attendanceRequestService.remove(req.params.id);
     return response.success(res, null, 'Pengajuan izin berhasil dihapus');
   } catch (err) {

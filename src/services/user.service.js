@@ -122,12 +122,18 @@ const resolveAll = async (params = {}) => {
 
 const getAll = async (params = {}) => {
   const roleId = params.roleId ?? params.role_id ?? null;
+  const institutionId = params.institutionId ?? params.institution_id ?? null;
   const conditions = ['u.is_deleted = 0'];
   const values = [];
 
   if (roleId) {
     conditions.push('u.role_id = ?');
     values.push(String(roleId));
+  }
+
+  if (institutionId) {
+    conditions.push('u.institution_id = ?');
+    values.push(Number(institutionId));
   }
 
   const whereSql = conditions.join(' AND ');

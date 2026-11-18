@@ -288,7 +288,17 @@ const evaluatePersonSummaryForPeriod = ({
   };
 };
 
-const getEmployeeRecap = async (params = {}) => {
+const resolveInstitutionId = (user, explicitId) => {
+  if (user?.institutionId) {
+    return Number(user.institutionId);
+  }
+  if (explicitId !== undefined && explicitId !== null && explicitId !== '') {
+    return Number(explicitId);
+  }
+  return null;
+};
+
+const getEmployeeRecap = async (params = {}, user = null) => {
   const personId = Number(params.personId || params.person_id);
   if (!personId) throw { status: 400, message: 'ID Pegawai (personId) wajib diisi' };
 
@@ -324,6 +334,10 @@ const getEmployeeRecap = async (params = {}) => {
     throw { status: 404, message: 'Data Pegawai tidak ditemukan' };
   }
   const person = personResult[0];
+
+  if (user?.institutionId && Number(person.institutionId) !== Number(user.institutionId)) {
+    throw { status: 403, message: 'Anda tidak memiliki hak akses untuk melihat rekap presensi pegawai institusi lain' };
+  }
 
   // 2. Fetch App Config via Raw SQL
   const configSql = `
@@ -487,7 +501,7 @@ const getEmployeeRecap = async (params = {}) => {
   };
 };
 
-const getEmployeeSummary = async (params = {}) => {
+const getEmployeeSummary = async (params = {}, user = null) => {
   const { pageNumber, pageSize, skip } = parsePaginationParams(params);
   const ignorePaging = parseBoolean(params.ignorePaging, false);
   const keyword = params.q ?? null;
@@ -516,7 +530,7 @@ const getEmployeeSummary = async (params = {}) => {
   let whereClauses = ['p.is_deleted = 0'];
   let whereParams = [];
 
-  const institutionId = params.institutionId || params.institution_id;
+  const institutionId = resolveInstitutionId(user, params.institutionId || params.institution_id);
   if (institutionId) {
     whereClauses.push('p.institution_id = ?');
     whereParams.push(Number(institutionId));

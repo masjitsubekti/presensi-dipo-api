@@ -547,7 +547,7 @@ const fetchDepartmentSummary = async (prisma, { todayStr, endDateStr, institutio
   let deptWhereSql = 'WHERE d.is_deleted = 0';
   const deptParams = [];
   if (institutionId) {
-    deptWhereSql += ' AND d.institution_id = ?';
+    deptWhereSql += ' AND (d.institution_id = ? OR d.institution_id IS NULL)';
     deptParams.push(institutionId);
   }
   if (departmentId) {
@@ -555,17 +555,21 @@ const fetchDepartmentSummary = async (prisma, { todayStr, endDateStr, institutio
     deptParams.push(departmentId);
   }
 
+  const personJoinFilter = institutionId ? ' AND p.institution_id = ?' : '';
+  const joinParams = institutionId ? [institutionId] : [];
+
   const deptSql = `
     SELECT 
       d.id AS departmentId,
       d.name AS departmentName,
+      d.institution_id AS departmentInstitutionId,
       p.id AS personId
     FROM m_department d
-    LEFT JOIN m_person p ON p.department_id = d.id AND p.is_deleted = 0
+    LEFT JOIN m_person p ON p.department_id = d.id AND p.is_deleted = 0${personJoinFilter}
     ${deptWhereSql}
     ORDER BY d.name ASC
   `;
-  const deptPersonsRows = await prisma.$queryRawUnsafe(deptSql, ...deptParams);
+  const deptPersonsRows = await prisma.$queryRawUnsafe(deptSql, ...joinParams, ...deptParams);
 
   // Group persons by department
   const deptMap = {};
@@ -575,6 +579,7 @@ const fetchDepartmentSummary = async (prisma, { todayStr, endDateStr, institutio
       deptMap[dId] = {
         id: dId,
         name: r.departmentName,
+        institutionId: r.departmentInstitutionId,
         persons: new Set(),
       };
     }
@@ -675,6 +680,9 @@ const fetchDepartmentSummary = async (prisma, { todayStr, endDateStr, institutio
   Object.values(deptMap).forEach(dept => {
     const personIds = Array.from(dept.persons);
     const totalEmployees = personIds.length;
+    if (institutionId && !dept.institutionId && totalEmployees === 0) {
+      return;
+    }
 
     let presentCount = 0;
     let todayAccountedCount = 0;
@@ -801,16 +809,27 @@ const fetchTopLateEmployees = async (prisma, { monthStr, now, institutionId, dep
   });
 };
 
+const resolveInstitutionId = (user, explicitId) => {
+  if (user?.institutionId) {
+    return Number(user.institutionId);
+  }
+  if (explicitId !== undefined && explicitId !== null && explicitId !== '' && explicitId !== 'all') {
+    const parsed = Number(explicitId);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  return null;
+};
+
 /**
  * Main Executive Dashboard Service
  */
-const getExecutiveSummary = async (params = {}) => {
+const getExecutiveSummary = async (params = {}, user = null) => {
   const now = new Date();
   const todayStr = params.startDate || now.toISOString().slice(0, 10);
   const endDateStr = params.endDate || todayStr;
   const monthStr = params.month || todayStr.slice(0, 7);
 
-  const institutionId = params.institutionId && params.institutionId !== 'all' ? Number(params.institutionId) : null;
+  const institutionId = resolveInstitutionId(user, params.institutionId ?? params.institution_id);
   const departmentId = params.departmentId && params.departmentId !== 'all' ? Number(params.departmentId) : null;
 
   const { summary, totalEmployees } = await fetchSummaryMetrics(prisma, {
@@ -837,10 +856,10 @@ const getExecutiveSummary = async (params = {}) => {
 /**
  * Dedicated Service for Top 10 Late Employees Monitoring
  */
-const getTopLateEmployees = async (params = {}) => {
+const getTopLateEmployees = async (params = {}, user = null) => {
   const now = new Date();
   const monthStr = params.month || now.toISOString().slice(0, 7);
-  const institutionId = params.institutionId && params.institutionId !== 'all' ? Number(params.institutionId) : null;
+  const institutionId = resolveInstitutionId(user, params.institutionId ?? params.institution_id);
   const departmentId = params.departmentId && params.departmentId !== 'all' ? Number(params.departmentId) : null;
 
   return fetchTopLateEmployees(prisma, { monthStr, now, institutionId, departmentId });

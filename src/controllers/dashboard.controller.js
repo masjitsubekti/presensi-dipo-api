@@ -7,7 +7,7 @@ const dashboardService = require('../services/dashboard.service');
 // 1. Executive Summary Endpoint
 const getExecutiveSummary = async (req, res, next) => {
   try {
-    const data = await dashboardService.getExecutiveSummary(req.query);
+    const data = await dashboardService.getExecutiveSummary(req.query, req.user);
 
     return res.status(200).json({
       status: true,
@@ -22,7 +22,7 @@ const getExecutiveSummary = async (req, res, next) => {
 // 2. Top 10 Pemantauan Keterlambatan Pegawai Endpoint
 const getTopLateEmployees = async (req, res, next) => {
   try {
-    const data = await dashboardService.getTopLateEmployees(req.query);
+    const data = await dashboardService.getTopLateEmployees(req.query, req.user);
 
     return res.status(200).json({
       status: true,

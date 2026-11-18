@@ -161,12 +161,12 @@ const resolveAll = async (params = {}, userParam = null) => {
     values.push('manual');
   }
 
-  if (isValidId(institutionId)) {
-    conditions.push('a.institution_id = ?');
-    values.push(Number(institutionId));
-  } else if (ctxInstitutionId) {
+  if (ctxInstitutionId) {
     conditions.push('a.institution_id = ?');
     values.push(ctxInstitutionId);
+  } else if (isValidId(institutionId)) {
+    conditions.push('a.institution_id = ?');
+    values.push(Number(institutionId));
   }
 
   if (isValidId(personId)) {
@@ -280,13 +280,16 @@ const resolveById = async (id) => {
 /**
  * Resolve log history / audit trail for a specific attendance record
  */
-const resolveLogsById = async (id) => {
+const resolveLogsById = async (id, user = null) => {
   const attendance = await prisma.attendance.findFirst({
     where: { id: BigInt(id), isDeleted: false },
     select: { id: true, personId: true, institutionId: true, attendanceDate: true },
   });
 
   if (!attendance) throw { status: 404, message: 'Data presensi tidak ditemukan' };
+  if (user?.institutionId && Number(attendance.institutionId) !== Number(user.institutionId)) {
+    throw { status: 403, message: 'Anda tidak memiliki hak akses untuk melihat riwayat log presensi institusi lain' };
+  }
 
   const cleanDateStr = moment(attendance.attendanceDate).format('YYYY-MM-DD');
   const startOfDay = new Date(`${cleanDateStr}T00:00:00.000Z`);
@@ -538,11 +541,21 @@ const create = async (data, user = null) => {
 
   const personMap = new Map(persons.map((p) => [p.id, p]));
 
+  if (user?.institutionId) {
+    const userInstId = Number(user.institutionId);
+    const hasForeignPerson = persons.some((p) => Number(p.institutionId) !== userInstId);
+    if (hasForeignPerson) {
+      throw { status: 403, message: 'Anda tidak memiliki hak akses untuk membuat presensi pegawai institusi lain' };
+    }
+  }
+
   const createdResults = [];
 
   for (const pid of personIds) {
     const personInfo = personMap.get(pid);
-    const institutionId = Number(data.institutionId || data.institution_id || personInfo?.institutionId || user?.institutionId || 1);
+    const institutionId = user?.institutionId
+      ? Number(user.institutionId)
+      : Number(data.institutionId || data.institution_id || personInfo?.institutionId || 1);
 
     // Check existing attendance row
     const existing = await prisma.attendance.findFirst({
@@ -639,6 +652,9 @@ const update = async (id, data, user = null) => {
   });
 
   if (!existing) throw { status: 404, message: 'Data presensi tidak ditemukan' };
+  if (user?.institutionId && Number(existing.institutionId) !== Number(user.institutionId)) {
+    throw { status: 403, message: 'Anda tidak memiliki hak akses untuk mengubah data presensi institusi lain' };
+  }
 
   const attendanceDateStr = data.attendanceDate || data.attendance_date || moment(existing.attendanceDate).format('YYYY-MM-DD');
   const attendanceDate = new Date(attendanceDateStr);
@@ -736,6 +752,9 @@ const remove = async (id, user = null) => {
     where: { id: BigInt(id), isDeleted: false },
   });
   if (!existing) throw { status: 404, message: 'Data presensi tidak ditemukan' };
+  if (user?.institutionId && Number(existing.institutionId) !== Number(user.institutionId)) {
+    throw { status: 403, message: 'Anda tidak memiliki hak akses untuk menghapus data presensi institusi lain' };
+  }
 
   const now = nowInTz();
 
@@ -767,8 +786,12 @@ const bulkRemove = async (ids = [], user = null) => {
   const bigIntIds = ids.map(BigInt);
   const now = nowInTz();
 
+  const whereClause = user?.institutionId
+    ? { id: { in: bigIntIds }, institutionId: Number(user.institutionId) }
+    : { id: { in: bigIntIds } };
+
   const result = await prisma.attendance.updateMany({
-    where: { id: { in: bigIntIds } },
+    where: whereClause,
     data: {
       isDeleted: true,
       deletedAt: now,
@@ -776,8 +799,12 @@ const bulkRemove = async (ids = [], user = null) => {
     },
   });
 
+  const logWhereClause = user?.institutionId
+    ? { attendanceId: { in: bigIntIds }, institutionId: Number(user.institutionId) }
+    : { attendanceId: { in: bigIntIds } };
+
   await prisma.attendanceLog.updateMany({
-    where: { attendanceId: { in: bigIntIds } },
+    where: logWhereClause,
     data: {
       isDeleted: true,
       deletedAt: now,

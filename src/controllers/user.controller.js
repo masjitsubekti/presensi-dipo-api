@@ -3,10 +3,27 @@ const { validateRequest } = require('../helpers/validator.helper');
 const userService = require('../services/user.service');
 const response = require('../helpers/response.helper');
 
+/**
+ * Helper to resolve institutionId: lock to user session institutionId if assigned, otherwise allow explicit parameter
+ */
+const resolveInstitutionId = (user, explicitId) => {
+  if (user?.institutionId) {
+    return Number(user.institutionId);
+  }
+  if (explicitId !== undefined && explicitId !== null && explicitId !== '') {
+    return Number(explicitId);
+  }
+  return null;
+};
+
 /** GET /v1/user */
 exports.index = async (req, res, next) => {
   try {
-    const result = await userService.resolveAll(req.query);
+    const params = {
+      ...req.query,
+      institutionId: resolveInstitutionId(req.user, req.query.institutionId ?? req.query.institution_id),
+    };
+    const result = await userService.resolveAll(params);
     return response.paginated(res, result);
   } catch (err) {
     if (err.status) return response.error(res, err.message, err.status);
@@ -17,7 +34,11 @@ exports.index = async (req, res, next) => {
 /** GET /v1/user/all */
 exports.all = async (req, res, next) => {
   try {
-    const data = await userService.getAll();
+    const params = {
+      ...req.query,
+      institutionId: resolveInstitutionId(req.user, req.query.institutionId ?? req.query.institution_id),
+    };
+    const data = await userService.getAll(params);
     return response.success(res, data);
   } catch (err) { next(err); }
 };
@@ -26,6 +47,11 @@ exports.all = async (req, res, next) => {
 exports.show = async (req, res, next) => {
   try {
     const data = await userService.getById(req.params.id);
+
+    if (req.user?.institutionId && Number(data.institutionId) !== Number(req.user.institutionId)) {
+      return response.error(res, 'Anda tidak memiliki hak akses untuk melihat user institusi lain', 403);
+    }
+
     return response.success(res, data);
   } catch (err) {
     if (err.status) return response.error(res, err.message, err.status);
@@ -44,7 +70,12 @@ exports.store = async (req, res, next) => {
       body('roleId').notEmpty().withMessage('Role ID wajib diisi'),
     ]);
 
-    const data = await userService.create(req.body, req.user);
+    const payload = {
+      ...req.body,
+      institutionId: resolveInstitutionId(req.user, req.body.institutionId ?? req.body.institution_id),
+    };
+
+    const data = await userService.create(payload, req.user);
     return response.success(res, data, 'User berhasil dibuat', 201);
   } catch (err) {
     if (err.status) return response.error(res, err.message, err.status, err.errors);
@@ -63,7 +94,22 @@ exports.update = async (req, res, next) => {
       body('roleId').notEmpty().withMessage('Role ID wajib diisi'),
     ]);
 
-    const data = await userService.update(req.params.id, req.body, req.user);
+    const current = await userService.getById(req.params.id);
+
+    if (!current.institutionId && req.user?.institutionId) {
+      return response.error(res, 'User global hanya dapat diubah oleh Admin Yayasan / Superadmin', 403);
+    }
+
+    if (current.institutionId && req.user?.institutionId && Number(current.institutionId) !== Number(req.user.institutionId)) {
+      return response.error(res, 'Anda tidak memiliki hak akses untuk mengubah user institusi lain', 403);
+    }
+
+    const payload = {
+      ...req.body,
+      institutionId: resolveInstitutionId(req.user, req.body.institutionId ?? req.body.institution_id),
+    };
+
+    const data = await userService.update(req.params.id, payload, req.user);
     return response.success(res, data, 'User berhasil diubah');
   } catch (err) {
     if (err.status) return response.error(res, err.message, err.status, err.errors);
@@ -74,6 +120,16 @@ exports.update = async (req, res, next) => {
 /** DELETE /v1/user/:id */
 exports.destroy = async (req, res, next) => {
   try {
+    const current = await userService.getById(req.params.id);
+
+    if (!current.institutionId && req.user?.institutionId) {
+      return response.error(res, 'User global hanya dapat dihapus oleh Admin Yayasan / Superadmin', 403);
+    }
+
+    if (current.institutionId && req.user?.institutionId && Number(current.institutionId) !== Number(req.user.institutionId)) {
+      return response.error(res, 'Anda tidak memiliki hak akses untuk menghapus user institusi lain', 403);
+    }
+
     await userService.remove(req.params.id);
     return response.success(res, null, 'User berhasil dihapus');
   } catch (err) {
@@ -88,6 +144,16 @@ exports.updateActiveStatus = async (req, res, next) => {
     await validateRequest(req, [
       body('active').isBoolean().withMessage('active harus boolean'),
     ]);
+
+    const current = await userService.getById(req.params.id);
+
+    if (!current.institutionId && req.user?.institutionId) {
+      return response.error(res, 'User global hanya dapat diubah oleh Admin Yayasan / Superadmin', 403);
+    }
+
+    if (current.institutionId && req.user?.institutionId && Number(current.institutionId) !== Number(req.user.institutionId)) {
+      return response.error(res, 'Anda tidak memiliki hak akses untuk mengubah status user institusi lain', 403);
+    }
 
     const { active } = req.body;
     const data = await userService.updateActiveStatus(req.params.id, active);

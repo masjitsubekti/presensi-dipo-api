@@ -53,7 +53,7 @@ const SORT_MAP = {
 
 const selectAttendanceRequestDTOQuery = `
   SELECT 
-    ar.id, ar.institution_id AS institutionId, ar.person_id AS personId,
+    ar.id, ar.institution_id AS institutionId, inst.name AS institutionName, ar.person_id AS personId,
     ar.attendance_type_id AS attendanceTypeId,
     ar.start_date AS startDate, ar.end_date AS endDate,
     ar.start_time AS startTime, ar.end_time AS endTime, ar.duration_type AS durationType,
@@ -68,6 +68,7 @@ const selectAttendanceRequestDTOQuery = `
     p.department_id AS departmentId, d.name AS departmentName,
     p.position_id AS positionId, pos.name AS positionName
   FROM attendance_requests ar
+  LEFT JOIN m_institution inst ON ar.institution_id = inst.id
   LEFT JOIN m_attendance_type at ON ar.attendance_type_id = at.id
   LEFT JOIN m_person p ON ar.person_id = p.id
   LEFT JOIN m_department d ON p.department_id = d.id
@@ -149,12 +150,12 @@ const resolveAll = async (params = {}, userParam = null) => {
   const conditions = ['ar.is_deleted = 0'];
   const values = [];
 
-  if (isValidId(institutionId)) {
-    conditions.push('ar.institution_id = ?');
-    values.push(Number(institutionId));
-  } else if (ctxInstitutionId) {
+  if (ctxInstitutionId) {
     conditions.push('ar.institution_id = ?');
     values.push(ctxInstitutionId);
+  } else if (isValidId(institutionId)) {
+    conditions.push('ar.institution_id = ?');
+    values.push(Number(institutionId));
   }
 
   if (isValidId(personId)) {
@@ -261,15 +262,18 @@ const create = async (data, user = null) => {
   const personId = Number(data.personId ?? data.person_id ?? user?.personId);
   if (!personId) throw { status: 400, message: 'Person ID wajib diisi' };
 
-  let institutionId = data.institutionId ?? data.institution_id ?? user?.institutionId;
-  if (!isValidId(institutionId)) {
-    const person = await prisma.mPerson.findFirst({
-      where: { id: personId, isDeleted: false },
-      select: { institutionId: true },
-    });
-    if (person && person.institutionId) {
-      institutionId = person.institutionId;
-    }
+  const person = await prisma.mPerson.findFirst({
+    where: { id: personId, isDeleted: false },
+    select: { institutionId: true },
+  });
+
+  if (user?.institutionId && person?.institutionId && Number(person.institutionId) !== Number(user.institutionId)) {
+    throw { status: 403, message: 'Anda tidak memiliki hak akses untuk membuat pengajuan izin pegawai institusi lain' };
+  }
+
+  let institutionId = user?.institutionId ?? data.institutionId ?? data.institution_id;
+  if (!isValidId(institutionId) && person?.institutionId) {
+    institutionId = person.institutionId;
   }
   institutionId = isValidId(institutionId) ? Number(institutionId) : null;
 

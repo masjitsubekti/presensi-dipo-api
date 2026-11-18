@@ -23,6 +23,9 @@ exports.index = async (req, res, next) => {
 exports.show = async (req, res, next) => {
   try {
     const data = await manualAttendanceService.resolveById(req.params.id);
+    if (req.user?.institutionId && Number(data.institutionId) !== Number(req.user.institutionId)) {
+      return response.error(res, 'Anda tidak memiliki hak akses untuk melihat data presensi institusi lain', 403);
+    }
     return response.success(res, data);
   } catch (err) {
     if (err.status) return response.error(res, err.message, err.status);
@@ -35,7 +38,7 @@ exports.show = async (req, res, next) => {
  */
 exports.logs = async (req, res, next) => {
   try {
-    const data = await manualAttendanceService.resolveLogsById(req.params.id);
+    const data = await manualAttendanceService.resolveLogsById(req.params.id, req.user);
     return response.success(res, data, 'Berhasil mengambil riwayat log presensi');
   } catch (err) {
     if (err.status) return response.error(res, err.message, err.status);
