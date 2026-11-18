@@ -164,6 +164,16 @@ const resolveById = async (id) => {
   };
 };
 
+const getById = async (id) => {
+  const shift = await prisma.workShift.findFirst({
+    where: { id: String(id), isDeleted: false },
+  });
+  if (!shift) {
+    throw { status: 404, message: 'Master Jam Kerja tidak ditemukan' };
+  }
+  return shift;
+};
+
 const create = async (data, user = null) => {
   const shiftId = uuidv4();
   const now = new Date();
@@ -280,6 +290,7 @@ const remove = async (id) => {
 module.exports = {
   resolveAll,
   getAll,
+  getById,
   resolveById,
   create,
   update,
